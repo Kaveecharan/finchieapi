@@ -1,0 +1,120 @@
+import { expenseRepository } from "../repositories/expense.repository.js";
+import { incomeRepository } from "../repositories/income.repository.js";
+import { savingGoalRepository } from "../repositories/savingGoal.repository.js";
+import { currentMonthRange, monthToDateRange } from "../utils/queryBuilder.js";
+
+export const analyticsService = {
+  // Full dashboard payload: all three chart datasets + summary numbers
+  getDashboard: async (userId, month) => {
+    const { start, end } = month ? monthToDateRange(month) : currentMonthRange();
+
+    const [
+      expenseByCategory,
+      topItems,
+      incomeByType,
+      expenseSumResult,
+      incomeSumResult,
+      totalSavings,
+    ] = await Promise.all([
+      expenseRepository.aggregateByCategory(userId, start, end),
+      expenseRepository.aggregateTopItems(userId, start, end, 10),
+      incomeRepository.aggregateByType(userId, start, end),
+      expenseRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
+      incomeRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
+      savingGoalRepository.totalCurrentByUser(userId),
+    ]);
+
+    const totalExpenses    = expenseSumResult[0]?.total ?? 0;
+    const totalIncome      = incomeSumResult[0]?.total  ?? 0;
+    const expenseCount     = expenseSumResult[0]?.count ?? 0;
+    const incomeCount      = incomeSumResult[0]?.count  ?? 0;
+
+    // netBalance  = total money the user has (income − expenses, savings excluded)
+    // availableBalance = spendable money   (netBalance − active savings)
+    const netBalance       = totalIncome - totalExpenses;
+    const availableBalance = netBalance - totalSavings;
+
+    return {
+      period: { start, end },
+      summary: {
+        totalExpenses,
+        totalIncome,
+        netBalance,
+        availableBalance,
+        expenseCount,
+        incomeCount,
+        totalSavings,
+      },
+      charts: {
+        expenseByCategory: expenseByCategory.map((r) => ({
+          id: r._id.id,
+          name: r._id.name,
+          total: r.total,
+          count: r.count,
+        })),
+        topItems: topItems.map((r) => ({
+          name: r._id,
+          total: r.total,
+          count: r.count,
+          category: r.category,
+        })),
+        incomeByType: incomeByType.map((r) => ({
+          type: r._id.type,
+          category: r._id.category,
+          total: r.total,
+          count: r.count,
+          sources: r.whose.filter(Boolean),
+        })),
+      },
+    };
+  },
+
+  // Returns a sorted list of "YYYY-MM" strings that have at least one
+  // expense or income, used by the frontend calendar picker to disable
+  // months with no data.
+  getActiveMonths: async (userId) => {
+    const [expMonths, incMonths] = await Promise.all([
+      expenseRepository.aggregateMonths(userId),
+      incomeRepository.aggregateMonths(userId),
+    ]);
+
+    const monthSet = new Set();
+    const toYM = ({ year, month }) =>
+      `${year}-${String(month).padStart(2, "0")}`;
+
+    expMonths.forEach((r) => monthSet.add(toYM(r)));
+    incMonths.forEach((r) => monthSet.add(toYM(r)));
+
+    return Array.from(monthSet).sort();
+  },
+
+  // Monthly trend for last N months (expenses vs income)
+  getTrend: async (userId, months = 6) => {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - (months - 1));
+    startDate.setDate(1);
+    startDate.setHours(0, 0, 0, 0);
+
+    const [expenseTrend, incomeTrend] = await Promise.all([
+      expenseRepository.aggregateMonthlyTrend(userId, startDate),
+      incomeRepository.aggregateMonthlyTrend(userId, startDate),
+    ]);
+
+    // Merge into unified monthly array
+    const monthMap = {};
+
+    expenseTrend.forEach(({ _id, total }) => {
+      const key = `${_id.year}-${String(_id.month).padStart(2, "0")}`;
+      if (!monthMap[key]) monthMap[key] = { month: key, expenses: 0, income: 0 };
+      monthMap[key].expenses = total;
+    });
+
+    incomeTrend.forEach(({ _id, total }) => {
+      const key = `${_id.year}-${String(_id.month).padStart(2, "0")}`;
+      if (!monthMap[key]) monthMap[key] = { month: key, expenses: 0, income: 0 };
+      monthMap[key].income = total;
+    });
+
+    return Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month));
+  },
+};
