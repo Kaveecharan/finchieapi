@@ -77,7 +77,30 @@ export const subscriptionService = {
       logger.info({ event: "stripe_customer_created", userId, customerId: customer.id });
     }
 
-    const setupIntent = await stripeService.createSetupIntent(sub.stripeCustomerId);
+    let setupIntent;
+    try {
+      setupIntent = await stripeService.createSetupIntent(sub.stripeCustomerId);
+    } catch (err) {
+      // Stale customer ID in DB (e.g. created in test mode, then switched to live)
+      if (err?.code === "resource_missing" && err?.param === "customer") {
+        const customer = await stripeService.createCustomer({
+          email: user.email,
+          name:  `${user.firstName} ${user.lastName ?? ""}`.trim(),
+          userId,
+        });
+
+        sub = await Subscription.findOneAndUpdate(
+          { userId },
+          { $set: { stripeCustomerId: customer.id } },
+          { new: true }
+        );
+
+        logger.info({ event: "stripe_customer_recreated", userId, customerId: customer.id });
+        setupIntent = await stripeService.createSetupIntent(sub.stripeCustomerId);
+      } else {
+        throw err;
+      }
+    }
 
     return {
       clientSecret:   setupIntent.client_secret,
