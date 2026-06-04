@@ -5,8 +5,7 @@ import { ForbiddenError } from "../errors/AppError.js";
 // ── Feature catalogue ─────────────────────────────────────────────────────────
 // Any feature in this set requires an active premium subscription.
 export const PREMIUM_FEATURES = new Set([
-  "ai_score",          // Financial health score (AI-generated)
-  "ai_forecast",       // AI spending forecast + insights
+  "ai_chat",           // AI Financial Assistant (50 AI messages/month)
   "advanced_analytics",// Analytics beyond 3 months
   "unlimited_history", // Transaction history beyond 6 months
   "export",            // PDF / CSV export

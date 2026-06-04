@@ -23,6 +23,7 @@ const formatForClient = (sub) => {
     currentPeriodStart: sub.currentPeriodStart,
     currentPeriodEnd:   sub.currentPeriodEnd,
     cancelAtPeriodEnd:  sub.cancelAtPeriodEnd ?? false,
+    gracePeriodEnd:     sub.gracePeriodEnd ?? null,
   };
 };
 
@@ -60,6 +61,11 @@ export const subscriptionService = {
     if (!user) throw new AppError("User not found.", 404, "NOT_FOUND");
 
     let sub = await Subscription.findOne({ userId });
+
+    // Reject before touching Stripe if the user already has an active subscription
+    if (sub?.stripeSubscriptionId && ["active", "trialing"].includes(sub.status)) {
+      throw new AppError("You already have an active subscription.", 409, "ALREADY_SUBSCRIBED");
+    }
 
     if (!sub?.stripeCustomerId) {
       const customer = await stripeService.createCustomer({

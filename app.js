@@ -17,8 +17,7 @@ import profileRoutes     from "./routes/profile.routes.js";
 import notificationsRoutes from "./routes/notifications.routes.js";
 import supportRoutes       from "./routes/support.routes.js";
 import savingsRoutes            from "./routes/savings.routes.js";
-import forecastRoutes           from "./routes/forecast.routes.js";
-import financialScoreRoutes     from "./routes/financialScore.routes.js";
+import chatRoutes               from "./routes/chat.routes.js";
 import subscriptionRoutes       from "./routes/subscription.routes.js";
 import { env } from "./config/env.js";
 
@@ -59,8 +58,7 @@ app.use("/profile",        profileRoutes);
 app.use("/notifications",  notificationsRoutes);
 app.use("/support",        supportRoutes);
 app.use("/savings",        savingsRoutes);
-app.use("/forecast",       forecastRoutes);
-app.use("/score",          financialScoreRoutes);
+app.use("/chat",           chatRoutes);
 app.use("/subscriptions",  subscriptionRoutes);
 
 app.get("/test", (req, res) => {
