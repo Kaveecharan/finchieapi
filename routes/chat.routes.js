@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate } from "../middleware/authenticate.js";
 import { requireFeature } from "../middleware/premium.js";
 import { chatController } from "../controllers/chat.controller.js";
 
