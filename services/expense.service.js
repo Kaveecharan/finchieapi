@@ -2,6 +2,7 @@ import { expenseRepository } from "../repositories/expense.repository.js";
 import { AppError } from "../errors/AppError.js";
 import { buildExpenseFilter, buildSort } from "../utils/queryBuilder.js";
 import { parsePagination, buildPaginationMeta } from "../utils/pagination.js";
+import { analyticsService } from "./analytics.service.js";
 
 export const expenseService = {
   list: async (userId, query) => {
@@ -24,12 +25,16 @@ export const expenseService = {
   },
 
   create: async (userId, data) => {
-    const payload = {
-      ...data,
-      userId,
-      date: new Date(data.date),
-    };
-    return expenseRepository.create(payload);
+    const amount    = Number(data.amount);
+    const available = await analyticsService.getAvailableBalance(userId);
+    if (amount > available) {
+      throw new AppError(
+        `Insufficient balance. You have ${Math.max(0, available).toFixed(2)} available.`,
+        400,
+        "INSUFFICIENT_BALANCE"
+      );
+    }
+    return expenseRepository.create({ ...data, userId, date: new Date(data.date) });
   },
 
   update: async (id, userId, data) => {

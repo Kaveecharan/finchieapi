@@ -8,6 +8,9 @@ export const savingDepositRepository = {
 
   create: (data) => SavingDeposit.create(data),
 
+  update: (id, data) =>
+    SavingDeposit.findByIdAndUpdate(id, { $set: data }, { new: true }).lean(),
+
   delete: (id) => SavingDeposit.findByIdAndDelete(id),
 
   deleteByGoal: (goalId) => SavingDeposit.deleteMany({ goalId }),

@@ -88,6 +88,18 @@ export const analyticsService = {
     return Array.from(monthSet).sort();
   },
 
+  // Lightweight available-balance check used by expense and savings services.
+  // Mirrors the availableBalance formula in getDashboard without the chart queries.
+  getAvailableBalance: async (userId) => {
+    const { start, end } = currentMonthRange();
+    const [expenseSum, incomeSum, totalSavings] = await Promise.all([
+      expenseRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
+      incomeRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
+      savingGoalRepository.totalCurrentByUser(userId),
+    ]);
+    return (incomeSum[0]?.total ?? 0) - (expenseSum[0]?.total ?? 0) - totalSavings;
+  },
+
   // Monthly trend for last N months (expenses vs income)
   getTrend: async (userId, months = 6) => {
     const startDate = new Date();

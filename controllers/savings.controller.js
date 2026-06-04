@@ -51,4 +51,22 @@ export const savingsController = {
     const deposits = await savingsService.getDeposits(req.user.userId, req.params.id);
     res.json({ success: true, data: deposits });
   }),
+
+  // GET /savings/:id
+  getGoalDetail: asyncHandler(async (req, res) => {
+    const data = await savingsService.getGoalDetail(req.user.userId, req.params.id);
+    res.json({ success: true, data });
+  }),
+
+  // POST /savings/:id/deduct
+  deductSavings: asyncHandler(async (req, res) => {
+    const result = await savingsService.deductSavings(req.user.userId, req.params.id, req.body);
+    res.status(201).json({ success: true, data: result });
+  }),
+
+  // PUT /savings/deposit/:depositId
+  updateDeposit: asyncHandler(async (req, res) => {
+    const result = await savingsService.updateDeposit(req.user.userId, req.params.depositId, req.body);
+    res.json({ success: true, data: result });
+  }),
 };

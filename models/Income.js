@@ -14,7 +14,7 @@ const incomeSchema = new mongoose.Schema(
     date: { type: Date, required: true },
     amount: { type: Number, required: true, min: 0 },
     type: { type: String, required: true, trim: true, maxlength: 100 },
-    category: { type: categoryRefSchema, required: true },
+    category: { type: categoryRefSchema, default: null },
     whose: { type: String, trim: true, maxlength: 200, default: "" },
     note: { type: String, trim: true, maxlength: 500, default: "" },
     images: {
