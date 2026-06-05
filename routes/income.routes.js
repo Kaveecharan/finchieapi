@@ -15,6 +15,7 @@ router.use(authenticate);
 router.get("/", validate(listIncomeSchema, "query"), incomeController.list);
 router.post("/", validate(createIncomeSchema), incomeController.create);
 router.get("/:id", incomeController.getOne);
+router.patch("/:id/approve", incomeController.approve);
 router.put("/:id", validate(updateIncomeSchema), incomeController.update);
 router.delete("/:id", incomeController.delete);
 

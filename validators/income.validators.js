@@ -36,4 +36,5 @@ export const listIncomeSchema = z.object({
   search: z.string().max(100).trim().optional(),
   sortField: z.enum(["date", "amount", "type", "whose"]).optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
+  status: z.enum(["active", "pending"]).optional(),
 });

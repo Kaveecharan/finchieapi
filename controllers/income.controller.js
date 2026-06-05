@@ -26,4 +26,9 @@ export const incomeController = {
     await incomeService.delete(req.params.id, req.user.userId);
     res.json({ success: true, message: "Income record deleted" });
   }),
+
+  approve: asyncHandler(async (req, res) => {
+    const income = await incomeService.approve(req.params.id, req.user.userId);
+    res.json({ success: true, data: income });
+  }),
 };

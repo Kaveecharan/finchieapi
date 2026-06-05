@@ -15,6 +15,7 @@ router.use(authenticate);
 router.get("/", validate(listExpenseSchema, "query"), expenseController.list);
 router.post("/", validate(createExpenseSchema), expenseController.create);
 router.get("/:id", expenseController.getOne);
+router.patch("/:id/approve", expenseController.approve);
 router.put("/:id", validate(updateExpenseSchema), expenseController.update);
 router.delete("/:id", expenseController.delete);
 

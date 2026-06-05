@@ -26,4 +26,9 @@ export const expenseController = {
     await expenseService.delete(req.params.id, req.user.userId);
     res.json({ success: true, message: "Expense deleted" });
   }),
+
+  approve: asyncHandler(async (req, res) => {
+    const expense = await expenseService.approve(req.params.id, req.user.userId);
+    res.json({ success: true, data: expense });
+  }),
 };
