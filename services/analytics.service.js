@@ -15,6 +15,8 @@ export const analyticsService = {
       expenseSumResult,
       incomeSumResult,
       totalSavings,
+      allTimeExpenseResult,
+      allTimeIncomeResult,
     ] = await Promise.all([
       expenseRepository.aggregateByCategory(userId, start, end),
       expenseRepository.aggregateTopItems(userId, start, end, 10),
@@ -22,17 +24,22 @@ export const analyticsService = {
       expenseRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
       incomeRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
       savingGoalRepository.totalCurrentByUser(userId),
+      // All-time totals for real-time balance — unaffected by the month filter
+      expenseRepository.sumByFilter({ userId }),
+      incomeRepository.sumByFilter({ userId }),
     ]);
 
-    const totalExpenses    = expenseSumResult[0]?.total ?? 0;
-    const totalIncome      = incomeSumResult[0]?.total  ?? 0;
-    const expenseCount     = expenseSumResult[0]?.count ?? 0;
-    const incomeCount      = incomeSumResult[0]?.count  ?? 0;
+    const totalExpenses = expenseSumResult[0]?.total ?? 0;
+    const totalIncome   = incomeSumResult[0]?.total  ?? 0;
+    const expenseCount  = expenseSumResult[0]?.count ?? 0;
+    const incomeCount   = incomeSumResult[0]?.count  ?? 0;
 
-    // netBalance  = total money the user has (income − expenses, savings excluded)
-    // availableBalance = spendable money   (netBalance − active savings)
+    // netBalance      = month-scoped net (kept for backward compat)
+    // availableBalance = all-time real balance: always accurate regardless of selected month
     const netBalance       = totalIncome - totalExpenses;
-    const availableBalance = netBalance - totalSavings;
+    const availableBalance = (allTimeIncomeResult[0]?.total ?? 0)
+                           - (allTimeExpenseResult[0]?.total ?? 0)
+                           - totalSavings;
 
     return {
       period: { start, end },
@@ -89,12 +96,11 @@ export const analyticsService = {
   },
 
   // Lightweight available-balance check used by expense and savings services.
-  // Mirrors the availableBalance formula in getDashboard without the chart queries.
+  // Uses all-time totals so it matches the availableBalance shown in the dashboard.
   getAvailableBalance: async (userId) => {
-    const { start, end } = currentMonthRange();
     const [expenseSum, incomeSum, totalSavings] = await Promise.all([
-      expenseRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
-      incomeRepository.sumByFilter({ userId, date: { $gte: start, $lte: end } }),
+      expenseRepository.sumByFilter({ userId }),
+      incomeRepository.sumByFilter({ userId }),
       savingGoalRepository.totalCurrentByUser(userId),
     ]);
     return (incomeSum[0]?.total ?? 0) - (expenseSum[0]?.total ?? 0) - totalSavings;

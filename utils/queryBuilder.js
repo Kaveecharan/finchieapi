@@ -29,6 +29,9 @@ export const buildExpenseFilter = (userId, params = {}) => {
     if (params.maxAmount !== undefined) filter.amount.$lte = Number(params.maxAmount);
   }
 
+  // Allow list to be filtered by status (e.g. status=pending for pending-only fetch)
+  if (params.status) filter.status = params.status;
+
   if (params.search) {
     filter.$or = [
       { itemName: { $regex: params.search, $options: "i" } },
@@ -69,6 +72,8 @@ export const buildIncomeFilter = (userId, params = {}) => {
     if (params.minAmount !== undefined) filter.amount.$gte = Number(params.minAmount);
     if (params.maxAmount !== undefined) filter.amount.$lte = Number(params.maxAmount);
   }
+
+  if (params.status) filter.status = params.status;
 
   if (params.search) {
     filter.$or = [

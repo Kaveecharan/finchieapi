@@ -16,6 +16,8 @@ const incomeSchema = new mongoose.Schema(
     type: { type: String, required: true, trim: true, maxlength: 100 },
     category: { type: categoryRefSchema, default: null },
     whose: { type: String, trim: true, maxlength: 200, default: "" },
+    // "active" = counted in balance/analytics; "pending" = scheduled, excluded from all calculations
+    status: { type: String, enum: ["active", "pending"], default: "active", index: true },
     note: { type: String, trim: true, maxlength: 500, default: "" },
     images: {
       type: [{ url: { type: String, required: true }, publicId: { type: String, required: true } }],

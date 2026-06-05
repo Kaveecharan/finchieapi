@@ -1,5 +1,7 @@
 import Income from "../models/Income.js";
 
+const ACTIVE = { status: { $ne: "pending" } };
+
 export const incomeRepository = {
   findPaginated: (filter, sort, skip, limit) =>
     Promise.all([
@@ -22,10 +24,9 @@ export const incomeRepository = {
   delete: (id, userId) =>
     Income.findOneAndDelete({ _id: id, userId }),
 
-  // Aggregation: income grouped by type and category
   aggregateByType: (userId, start, end) =>
     Income.aggregate([
-      { $match: { userId, date: { $gte: start, $lte: end } } },
+      { $match: { userId, ...ACTIVE, date: { $gte: start, $lte: end } } },
       {
         $group: {
           _id: { type: "$type", category: "$category.name" },
@@ -37,10 +38,9 @@ export const incomeRepository = {
       { $sort: { total: -1 } },
     ]),
 
-  // Aggregation: income grouped by category only
   aggregateByCategory: (userId, start, end) =>
     Income.aggregate([
-      { $match: { userId, date: { $gte: start, $lte: end } } },
+      { $match: { userId, ...ACTIVE, date: { $gte: start, $lte: end } } },
       {
         $group: {
           _id: { id: "$category._id", name: "$category.name" },
@@ -51,16 +51,12 @@ export const incomeRepository = {
       { $sort: { total: -1 } },
     ]),
 
-  // Monthly trend for last N months
   aggregateMonthlyTrend: (userId, start) =>
     Income.aggregate([
-      { $match: { userId, date: { $gte: start } } },
+      { $match: { userId, ...ACTIVE, date: { $gte: start } } },
       {
         $group: {
-          _id: {
-            year: { $year: "$date" },
-            month: { $month: "$date" },
-          },
+          _id: { year: { $year: "$date" }, month: { $month: "$date" } },
           total: { $sum: "$amount" },
           count: { $sum: 1 },
         },
@@ -70,13 +66,13 @@ export const incomeRepository = {
 
   sumByFilter: (filter) =>
     Income.aggregate([
-      { $match: filter },
+      { $match: { ...filter, ...ACTIVE } },
       { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
     ]),
 
   aggregateMonths: (userId) =>
     Income.aggregate([
-      { $match: { userId } },
+      { $match: { userId, ...ACTIVE } },
       { $group: { _id: { year: { $year: "$date" }, month: { $month: "$date" } } } },
       { $project: { _id: 0, year: "$_id.year", month: "$_id.month" } },
     ]),

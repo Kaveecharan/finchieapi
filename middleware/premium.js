@@ -13,6 +13,7 @@ export const PREMIUM_FEATURES = new Set([
   "smart_search",      // Full-text smart search
   "enhanced_charts",   // Heatmaps and advanced visualisations
   "priority_support",  // Priority support channel
+  "insights",          // Scheduled daily financial insight push notifications
 ]);
 
 // ── attachSubscription ────────────────────────────────────────────────────────

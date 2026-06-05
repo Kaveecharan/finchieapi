@@ -1,5 +1,9 @@
 import Expense from "../models/Expense.js";
 
+// Single source of truth: all analytics/aggregate queries exclude pending transactions.
+// Existing documents without a status field are treated as active by $ne semantics.
+const ACTIVE = { status: { $ne: "pending" } };
+
 export const expenseRepository = {
   findPaginated: (filter, sort, skip, limit) =>
     Promise.all([
@@ -22,10 +26,9 @@ export const expenseRepository = {
   delete: (id, userId) =>
     Expense.findOneAndDelete({ _id: id, userId }),
 
-  // Aggregation: expense totals grouped by category for a date range
   aggregateByCategory: (userId, start, end) =>
     Expense.aggregate([
-      { $match: { userId, date: { $gte: start, $lte: end } } },
+      { $match: { userId, ...ACTIVE, date: { $gte: start, $lte: end } } },
       {
         $group: {
           _id: { id: "$category._id", name: "$category.name" },
@@ -36,10 +39,9 @@ export const expenseRepository = {
       { $sort: { total: -1 } },
     ]),
 
-  // Aggregation: top N items by total spend
   aggregateTopItems: (userId, start, end, limit = 10) =>
     Expense.aggregate([
-      { $match: { userId, date: { $gte: start, $lte: end } } },
+      { $match: { userId, ...ACTIVE, date: { $gte: start, $lte: end } } },
       {
         $group: {
           _id: "$itemName",
@@ -52,16 +54,12 @@ export const expenseRepository = {
       { $limit: limit },
     ]),
 
-  // Aggregation: monthly totals for trend chart (last N months)
   aggregateMonthlyTrend: (userId, start) =>
     Expense.aggregate([
-      { $match: { userId, date: { $gte: start } } },
+      { $match: { userId, ...ACTIVE, date: { $gte: start } } },
       {
         $group: {
-          _id: {
-            year: { $year: "$date" },
-            month: { $month: "$date" },
-          },
+          _id: { year: { $year: "$date" }, month: { $month: "$date" } },
           total: { $sum: "$amount" },
           count: { $sum: 1 },
         },
@@ -69,17 +67,16 @@ export const expenseRepository = {
       { $sort: { "_id.year": 1, "_id.month": 1 } },
     ]),
 
-  // Total sum for a given filter (used for monthly summary)
+  // ACTIVE injected here so all callers (analytics, balance checks) automatically exclude pending
   sumByFilter: (filter) =>
     Expense.aggregate([
-      { $match: filter },
+      { $match: { ...filter, ...ACTIVE } },
       { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
     ]),
 
-  // Returns every distinct { year, month } pair that has at least one expense.
   aggregateMonths: (userId) =>
     Expense.aggregate([
-      { $match: { userId } },
+      { $match: { userId, ...ACTIVE } },
       { $group: { _id: { year: { $year: "$date" }, month: { $month: "$date" } } } },
       { $project: { _id: 0, year: "$_id.year", month: "$_id.month" } },
     ]),

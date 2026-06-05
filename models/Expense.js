@@ -24,6 +24,8 @@ const expenseSchema = new mongoose.Schema(
     itemName: { type: String, required: true, trim: true, maxlength: 200 },
     category: { type: categoryRefSchema, required: true },
     subCategory: { type: subCategoryRefSchema, default: null },
+    // "active" = counted in balance/analytics; "pending" = scheduled, excluded from all calculations
+    status: { type: String, enum: ["active", "pending"], default: "active", index: true },
     note: { type: String, trim: true, maxlength: 500, default: "" },
     images: {
       type: [{ url: { type: String, required: true }, publicId: { type: String, required: true } }],
