@@ -20,7 +20,7 @@ export const subscriptionController = {
       data: {
         publishableKey: env.STRIPE_PUBLISHABLE_KEY,
         plan: {
-          name:        "Finty Premium",
+          name:        "Finchie Premium",
           price:       3.99,
           currency:    "gbp",
           interval:    "month",
