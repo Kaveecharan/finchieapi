@@ -59,6 +59,31 @@ export const subscriptionController = {
     res.json({ success: true, data });
   }),
 
+  // GET /subscriptions/payment-method
+  getPaymentMethod: asyncHandler(async (req, res) => {
+    const data = await subscriptionService.getPaymentMethod(req.user.userId);
+    res.json({ success: true, data });
+  }),
+
+  // GET /subscriptions/billing-history
+  getBillingHistory: asyncHandler(async (req, res) => {
+    const data = await subscriptionService.getBillingHistory(req.user.userId);
+    res.json({ success: true, data });
+  }),
+
+  // POST /subscriptions/update-payment/setup
+  setupUpdatePayment: asyncHandler(async (req, res) => {
+    const data = await subscriptionService.setupUpdatePayment(req.user.userId);
+    res.json({ success: true, data });
+  }),
+
+  // POST /subscriptions/update-payment/confirm
+  confirmUpdatePayment: asyncHandler(async (req, res) => {
+    const { paymentMethodId } = req.body;
+    const data = await subscriptionService.confirmUpdatePayment(req.user.userId, paymentMethodId);
+    res.json({ success: true, data });
+  }),
+
   // POST /subscriptions/webhook
   // Stripe webhook — must receive raw body (registered before express.json)
   webhook: asyncHandler(async (req, res) => {

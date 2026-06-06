@@ -55,6 +55,34 @@ export const stripeService = {
   retrieve: (subscriptionId) =>
     stripe().subscriptions.retrieve(subscriptionId),
 
+  // ── Payment Method ─────────────────────────────────────────────────────────
+  // Retrieve the default payment method attached to a subscription, expanded.
+  getSubscriptionPaymentMethod: async (subscriptionId) => {
+    const sub = await stripe().subscriptions.retrieve(subscriptionId, {
+      expand: ["default_payment_method"],
+    });
+    return sub.default_payment_method ?? null;
+  },
+
+  retrievePaymentMethod: (paymentMethodId) =>
+    stripe().paymentMethods.retrieve(paymentMethodId),
+
+  // Update default payment method on both the customer and the subscription.
+  updateDefaultPaymentMethod: async (customerId, subscriptionId, paymentMethodId) => {
+    await stripe().customers.update(customerId, {
+      invoice_settings: { default_payment_method: paymentMethodId },
+    });
+    if (subscriptionId) {
+      await stripe().subscriptions.update(subscriptionId, {
+        default_payment_method: paymentMethodId,
+      });
+    }
+  },
+
+  // ── Invoices ───────────────────────────────────────────────────────────────
+  listInvoices: (customerId, limit = 24) =>
+    stripe().invoices.list({ customer: customerId, limit }),
+
   // ── Webhook ────────────────────────────────────────────────────────────────
   // Requires raw (unparsed) body — registered before express.json() in app.js.
   constructWebhookEvent: (rawBody, signature) => {

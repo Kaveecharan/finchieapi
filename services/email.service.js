@@ -245,3 +245,134 @@ export const sendSupportEmail = (fromEmail, subject, message, userId) =>
       ${messageBlock(message)}
     `)
   );
+
+// ── Subscription lifecycle emails ──────────────────────────────────────────────
+
+const fmtDate = (d) =>
+  new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+const fmtAmount = (amount, currency = "gbp") => {
+  const sym = currency === "gbp" ? "£" : currency === "usd" ? "$" : "€";
+  return `${sym}${Number(amount).toFixed(2)}`;
+};
+
+export const sendSubscriptionActivatedEmail = (to, firstName, { trialEnd, amount = 3.99, currency = "gbp" }) =>
+  sendEmail(
+    to,
+    `Premium Subscription Activated — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Welcome to Premium! 💎")}
+      ${greeting(firstName)}
+      ${bodyText("Your 30-day free trial has started. You now have access to all premium features, including AI insights, unlimited analytics history, and data exports.")}
+      ${metaTable([
+        { label: "Plan",       value: "<strong>Finchie Premium</strong>" },
+        { label: "Trial ends", value: fmtDate(trialEnd) },
+        { label: "Then",       value: `${fmtAmount(amount, currency)} / month` },
+      ])}
+      ${alertBox(
+        "No charge today. Your card will only be billed when your trial ends. Cancel anytime before then.",
+        "warning"
+      )}
+      ${note("For billing help, reply to this email or contact support from within the app.")}
+    `)
+  );
+
+export const sendTrialEndingSoonEmail = (to, firstName, daysLeft) =>
+  sendEmail(
+    to,
+    `Your free trial ends in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Trial Ending Soon ⏰", C.warning)}
+      ${greeting(firstName)}
+      ${bodyText(`Your 30-day free trial ends in <strong>${daysLeft} day${daysLeft !== 1 ? "s" : ""}</strong>. After that, you'll be billed <strong>£3.99/month</strong> to keep your premium access.`)}
+      ${alertBox(
+        "To avoid being charged, cancel your subscription before your trial ends. You can do this from Profile → Settings → Subscription.",
+        "warning"
+      )}
+      ${note("If you love Finchie Premium, no action is needed — you'll be seamlessly billed and keep access.")}
+    `)
+  );
+
+export const sendPaymentSucceededEmail = (to, firstName, { amount, currency = "gbp", invoiceUrl, nextRenewalDate }) =>
+  sendEmail(
+    to,
+    `Payment confirmed — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Payment Confirmed ✅")}
+      ${greeting(firstName)}
+      ${bodyText("Thank you! Your subscription payment was processed successfully.")}
+      ${metaTable([
+        { label: "Amount",   value: `<strong>${fmtAmount(amount, currency)}</strong>` },
+        { label: "Status",   value: "<span style=\"color:#1A8A5E;font-weight:700;\">Paid</span>" },
+        ...(nextRenewalDate ? [{ label: "Next charge", value: fmtDate(nextRenewalDate) }] : []),
+      ])}
+      ${invoiceUrl
+        ? `<p style="text-align:center;margin:20px 0;"><a href="${invoiceUrl}" style="background:#1A8A5E;color:#fff;padding:11px 26px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">View Invoice</a></p>`
+        : ""}
+    `)
+  );
+
+export const sendPaymentFailedEmail = (to, firstName, { gracePeriodEnd }) =>
+  sendEmail(
+    to,
+    `Payment failed — action required — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Payment Failed", C.danger)}
+      ${greeting(firstName)}
+      ${bodyText("We were unable to process your subscription payment. Please update your payment method to keep your premium access.")}
+      ${alertBox(
+        `Your premium access continues until <strong>${gracePeriodEnd ? fmtDate(gracePeriodEnd) : "the grace period ends"}</strong>. After that your subscription will be suspended.`,
+        "danger"
+      )}
+      ${bodyText("To update your card, open the app and go to Profile → Settings → Subscription & Billing → Update Card.")}
+      ${note("If this is unexpected, please contact support from within the app.")}
+    `)
+  );
+
+export const sendCardUpdatedEmail = (to, firstName, { brand, last4 }) =>
+  sendEmail(
+    to,
+    `Payment method updated — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Card Updated 💳")}
+      ${greeting(firstName)}
+      ${bodyText("Your default payment method has been updated successfully.")}
+      ${metaTable([
+        { label: "Card",    value: `${brand ? brand.charAt(0).toUpperCase() + brand.slice(1) : "Card"} ending in <strong>${last4}</strong>` },
+        { label: "Changed", value: fmtDate(new Date()) },
+      ])}
+      ${alertBox("If you did not make this change, please contact support immediately.", "warning")}
+    `)
+  );
+
+export const sendSubscriptionCancelledEmail = (to, firstName, { accessUntil }) =>
+  sendEmail(
+    to,
+    `Subscription cancellation confirmed — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Cancellation Confirmed")}
+      ${greeting(firstName)}
+      ${bodyText("We've received your cancellation request. You'll keep full premium access until the end of your current billing period.")}
+      ${metaTable([
+        { label: "Access until", value: `<strong>${accessUntil ? fmtDate(accessUntil) : "end of current period"}</strong>` },
+      ])}
+      ${bodyText("Changed your mind? You can reactivate your subscription any time before the billing period ends from Profile → Settings → Subscription.")}
+      ${note("We're sorry to see you go. If there's anything we can do to improve your experience, please let us know via support.")}
+    `)
+  );
+
+export const sendSubscriptionExpiredEmail = (to, firstName) =>
+  sendEmail(
+    to,
+    `Your premium access has ended — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title("Premium Access Ended")}
+      ${greeting(firstName)}
+      ${bodyText("Your Finchie Premium subscription has ended. You've been moved to the free plan.")}
+      ${metaTable([
+        { label: "Features lost", value: "AI insights, unlimited history, exports, enhanced charts" },
+      ])}
+      ${bodyText("Your data is safe and your account remains active. You can resubscribe any time to regain premium access.")}
+      ${note("To resubscribe, open the app and go to Profile → Settings → Subscription.")}
+    `)
+  );

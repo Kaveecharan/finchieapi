@@ -36,6 +36,11 @@ export const buildExpenseFilter = (userId, params = {}) => {
     filter.status = { $ne: "pending" };
   }
 
+  if (params.itemName) {
+    const esc = params.itemName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    filter.itemName = { $regex: `^${esc}$`, $options: "i" };
+  }
+
   if (params.search) {
     filter.$or = [
       { itemName: { $regex: params.search, $options: "i" } },
