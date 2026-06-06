@@ -147,14 +147,30 @@ export const subscriptionService = {
       );
     }
 
-    if (sub.stripeSubscriptionId && ["active", "trialing"].includes(sub.status)) {
-      throw new AppError("Subscription is already active.", 409, "ALREADY_SUBSCRIBED");
+    // Block all non-expired states — each has the correct recovery path:
+    //   active/trialing → already subscribed
+    //   past_due        → update payment method via /update-payment/confirm
+    //   cancelled       → undo via /reactivate
+    if (sub.stripeSubscriptionId && sub.status !== "expired") {
+      const msg = {
+        active:    "You already have an active subscription.",
+        trialing:  "You are currently in a free trial.",
+        past_due:  "Payment failed. Please update your payment method to restore access.",
+        cancelled: "Your subscription is scheduled to end. Use reactivate to undo cancellation.",
+      }[sub.status] ?? "Subscription already exists.";
+      throw new AppError(msg, 409, "ALREADY_SUBSCRIBED");
     }
+
+    // Deterministic idempotency key (daily window) — if two requests race,
+    // Stripe returns the same subscription object for both, preventing a
+    // duplicate Stripe subscription being created for the same user.
+    const idempotencyKey = `finchie-activate-${userId}-${new Date().toISOString().slice(0, 10)}`;
 
     const stripeSub = await stripeService.createSubscription(
       sub.stripeCustomerId,
       env.STRIPE_PRICE_ID,
-      30
+      30,
+      idempotencyKey
     );
 
     const updated = await Subscription.findOneAndUpdate(
@@ -184,7 +200,7 @@ export const subscriptionService = {
           trialEnd: updated.trialEnd,
           amount:   3.99,
           currency: "gbp",
-        }).catch(() => {});
+        }).catch((err) => logger.warn({ event: "email_send_failed", err: err.message }));
       }
     });
 
@@ -219,7 +235,7 @@ export const subscriptionService = {
       if (user) {
         sendSubscriptionCancelledEmail(user.email, user.firstName, {
           accessUntil: updated.currentPeriodEnd,
-        }).catch(() => {});
+        }).catch((err) => logger.warn({ event: "email_send_failed", err: err.message }));
       }
     });
 
@@ -319,7 +335,7 @@ export const subscriptionService = {
       sendCardUpdatedEmail(user.email, user.firstName, {
         brand: pm.card.brand,
         last4: pm.card.last4,
-      }).catch(() => {});
+      }).catch((err) => logger.warn({ event: "email_send_failed", err: err.message }));
     }
 
     logger.info({ event: "payment_method_updated", userId });
@@ -331,20 +347,20 @@ export const subscriptionService = {
     const { type, id: eventId } = event;
     const obj = event.data.object;
 
-    // Idempotency — skip already-processed events
-    const alreadyProcessed = await Subscription.exists({ lastStripeEventId: eventId });
-    if (alreadyProcessed) {
-      logger.info({ event: "stripe_webhook_duplicate", eventId });
-      return;
-    }
-
-    const meta = { lastStripeEventId: eventId, lastStripeEventAt: new Date() };
+    // Idempotency is enforced atomically per-case via findOneAndUpdate with
+    // { lastStripeEventId: { $ne: eventId } }. MongoDB's document-level
+    // atomicity means only one concurrent delivery can write the eventId —
+    // the second sees it already set and gets null back (no email sent).
+    // This eliminates the TOCTOU window of a separate exists() + update.
+    const meta     = { lastStripeEventId: eventId, lastStripeEventAt: new Date() };
+    const notSeen  = { lastStripeEventId: { $ne: eventId } };
+    const logWarn  = (err) => logger.warn({ event: "email_send_failed", err: err.message });
 
     switch (type) {
       case "customer.subscription.created":
       case "customer.subscription.updated": {
-        await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer },
+        const updated = await Subscription.findOneAndUpdate(
+          { stripeCustomerId: obj.customer, ...notSeen },
           {
             $set: {
               stripeSubscriptionId: obj.id,
@@ -359,13 +375,14 @@ export const subscriptionService = {
             },
           }
         );
+        if (!updated) logger.info({ event: "stripe_webhook_duplicate", eventId, type });
         break;
       }
 
       case "invoice.payment_succeeded": {
         if (!obj.subscription) break;
         const updatedSub = await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer },
+          { stripeCustomerId: obj.customer, ...notSeen },
           {
             $set: {
               status:             "active",
@@ -378,7 +395,8 @@ export const subscriptionService = {
           },
           { new: true }
         );
-        // Send payment confirmation email (skip trial $0 invoices)
+        if (!updatedSub) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
+        // Send payment confirmation email only on first processing (skip $0 trial invoices)
         if (obj.amount_paid > 0) {
           getUserByCustomerId(obj.customer).then((user) => {
             if (user) {
@@ -386,8 +404,8 @@ export const subscriptionService = {
                 amount:          obj.amount_paid / 100,
                 currency:        obj.currency,
                 invoiceUrl:      obj.hosted_invoice_url,
-                nextRenewalDate: updatedSub?.currentPeriodEnd,
-              }).catch(() => {});
+                nextRenewalDate: updatedSub.currentPeriodEnd,
+              }).catch(logWarn);
             }
           });
         }
@@ -399,41 +417,42 @@ export const subscriptionService = {
           ? fromStripeTimestamp(obj.next_payment_attempt)
           : new Date(Date.now() + 3 * 86_400_000);
 
-        await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer },
+        const updated = await Subscription.findOneAndUpdate(
+          { stripeCustomerId: obj.customer, ...notSeen },
           { $set: { status: "past_due", gracePeriodEnd, ...meta } }
         );
+        if (!updated) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
         getUserByCustomerId(obj.customer).then((user) => {
-          if (user) {
-            sendPaymentFailedEmail(user.email, user.firstName, { gracePeriodEnd }).catch(() => {});
-          }
+          if (user) sendPaymentFailedEmail(user.email, user.firstName, { gracePeriodEnd }).catch(logWarn);
         });
         break;
       }
 
       case "customer.subscription.trial_will_end": {
-        // Stripe fires this 3 days before trial ends
+        // No status change — stamp the event on the doc for idempotent email delivery.
+        const updated = await Subscription.findOneAndUpdate(
+          { stripeCustomerId: obj.customer, ...notSeen },
+          { $set: meta }
+        );
+        if (!updated) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
         const daysLeft = Math.ceil(
           (fromStripeTimestamp(obj.trial_end) - Date.now()) / 86_400_000
         );
         logger.info({ event: "stripe_trial_will_end", customerId: obj.customer, daysLeft });
         getUserByCustomerId(obj.customer).then((user) => {
-          if (user) {
-            sendTrialEndingSoonEmail(user.email, user.firstName, daysLeft).catch(() => {});
-          }
+          if (user) sendTrialEndingSoonEmail(user.email, user.firstName, daysLeft).catch(logWarn);
         });
         break;
       }
 
       case "customer.subscription.deleted": {
-        await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer },
+        const updated = await Subscription.findOneAndUpdate(
+          { stripeCustomerId: obj.customer, ...notSeen },
           { $set: { status: "expired", plan: "free", ...meta } }
         );
+        if (!updated) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
         getUserByCustomerId(obj.customer).then((user) => {
-          if (user) {
-            sendSubscriptionExpiredEmail(user.email, user.firstName).catch(() => {});
-          }
+          if (user) sendSubscriptionExpiredEmail(user.email, user.firstName).catch(logWarn);
         });
         break;
       }

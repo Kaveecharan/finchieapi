@@ -34,17 +34,20 @@ export const stripeService = {
     }),
 
   // ── Subscription ───────────────────────────────────────────────────────────
-  createSubscription: (customerId, priceId, trialDays = 30) =>
-    stripe().subscriptions.create({
-      customer: customerId,
-      items: [{ price: priceId }],
-      trial_period_days: trialDays,
-      payment_settings: {
-        payment_method_types: ["card"],
-        save_default_payment_method: "on_subscription",
+  createSubscription: (customerId, priceId, trialDays = 30, idempotencyKey) =>
+    stripe().subscriptions.create(
+      {
+        customer: customerId,
+        items: [{ price: priceId }],
+        trial_period_days: trialDays,
+        payment_settings: {
+          payment_method_types: ["card"],
+          save_default_payment_method: "on_subscription",
+        },
+        expand: ["latest_invoice.payment_intent"],
       },
-      expand: ["latest_invoice.payment_intent"],
-    }),
+      idempotencyKey ? { idempotencyKey } : undefined
+    ),
 
   cancelAtPeriodEnd: (subscriptionId) =>
     stripe().subscriptions.update(subscriptionId, { cancel_at_period_end: true }),

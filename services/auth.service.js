@@ -359,10 +359,10 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
 
   let user = await userRepository.findByGoogleId(googleId);
   if (!user) {
-    user = await userRepository.findByEmail(lowerEmail);
+    user = await userRepository.findByEmailWithSecrets(lowerEmail);
     if (user) {
-      if (!user.oauthOnly) {
-        throw new ConflictError("Account already exists with email/password. Please log in using your password.");
+      if (user.passwordHash) {
+        throw new ConflictError("An account already exists with this email. Please sign in using your email and password.");
       }
       user.googleId = googleId;
       if (!user.isEmailVerified) user.isEmailVerified = true;
