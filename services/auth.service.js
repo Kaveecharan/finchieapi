@@ -357,13 +357,18 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
 
   const lowerEmail = email.toLowerCase();
 
+  // Reject Google OAuth if an email+password account already exists for this email.
+  // This check runs before findByGoogleId so it fires even if googleId was previously
+  // linked to a password account through a bug or legacy state.
+  const existingByEmail = await userRepository.findByEmailWithSecrets(lowerEmail);
+  if (existingByEmail?.passwordHash) {
+    throw new ConflictError("An account already exists with this email. Please sign in using your email and password.");
+  }
+
   let user = await userRepository.findByGoogleId(googleId);
   if (!user) {
-    user = await userRepository.findByEmailWithSecrets(lowerEmail);
-    if (user) {
-      if (user.passwordHash) {
-        throw new ConflictError("An account already exists with this email. Please sign in using your email and password.");
-      }
+    if (existingByEmail) {
+      user = existingByEmail;
       user.googleId = googleId;
       if (!user.isEmailVerified) user.isEmailVerified = true;
       await userRepository.save(user);
