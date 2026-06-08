@@ -17,10 +17,22 @@ router.post(
       return res.status(400).json({ error: "token is required" });
     }
 
+    // Pipeline update: deduplicate with $setUnion then cap at 5 most-recent tokens.
+    // Atomic — no separate trim step needed. Prevents unbounded document growth.
     await User.updateOne(
       { userId: req.user.userId },
-      // $addToSet prevents duplicates; keep max last 3 tokens per user (multiple devices)
-      { $addToSet: { pushTokens: token } }
+      [
+        {
+          $set: {
+            pushTokens: {
+              $slice: [
+                { $setUnion: [{ $ifNull: ["$pushTokens", []] }, [token]] },
+                -5,
+              ],
+            },
+          },
+        },
+      ]
     );
 
     res.json({ success: true });

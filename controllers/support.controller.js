@@ -5,7 +5,7 @@ import { logger } from "../utils/logger.js";
 export const supportController = {
   contact: async (req, res) => {
     const { email, subject, message } = req.body;
-    const userId = req.user?._id;
+    const userId = req.user?.userId;
 
     try {
       await sendSupportEmail(email, subject, message, userId);

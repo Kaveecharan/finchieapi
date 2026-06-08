@@ -42,9 +42,10 @@ export const buildExpenseFilter = (userId, params = {}) => {
   }
 
   if (params.search) {
+    const searchEsc = params.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     filter.$or = [
-      { itemName: { $regex: params.search, $options: "i" } },
-      { note: { $regex: params.search, $options: "i" } },
+      { itemName: { $regex: searchEsc, $options: "i" } },
+      { note: { $regex: searchEsc, $options: "i" } },
     ];
   }
 
@@ -89,10 +90,11 @@ export const buildIncomeFilter = (userId, params = {}) => {
   }
 
   if (params.search) {
+    const searchEsc = params.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     filter.$or = [
-      { whose: { $regex: params.search, $options: "i" } },
-      { note: { $regex: params.search, $options: "i" } },
-      { type: { $regex: params.search, $options: "i" } },
+      { whose: { $regex: searchEsc, $options: "i" } },
+      { note: { $regex: searchEsc, $options: "i" } },
+      { type: { $regex: searchEsc, $options: "i" } },
     ];
   }
 

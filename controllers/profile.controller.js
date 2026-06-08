@@ -36,7 +36,7 @@ export const profileController = {
   }),
 
   deactivate: asyncHandler(async (req, res) => {
-    await profileService.deactivate(req.user.userId, req.body.password);
+    await profileService.deactivate(req.user.userId, req.body?.password);
     res.json({ success: true, message: "Account deactivated. You will be signed out." });
   }),
 };

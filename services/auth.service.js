@@ -341,11 +341,19 @@ export const verifyMfaLogin = async ({ mfaToken, code, backupCode }, deviceInfo)
 export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
   if (!googleWebClient) throw new AppError("Google OAuth not configured", 500, "OAUTH_MISCONFIGURED");
 
+  // Accept tokens from any configured platform client ID so that
+  // iOS-native, Android-native, and web-issued tokens all validate.
+  const validAudiences = [
+    env.GOOGLE_WEB_CLIENT_ID,
+    env.GOOGLE_IOS_CLIENT_ID,
+    env.GOOGLE_ANDROID_CLIENT_ID,
+  ].filter(Boolean);
+
   let googlePayload;
   try {
     const ticket = await googleWebClient.verifyIdToken({
       idToken,
-      audience: env.GOOGLE_WEB_CLIENT_ID,
+      audience: validAudiences,
     });
     googlePayload = ticket.getPayload();
   } catch {
@@ -599,6 +607,7 @@ const publicProfile = (user) => ({
   isEmailVerified: user.isEmailVerified,
   roles:          user.roles,
   mfaEnabled:     user.mfaEnabled,
+  oauthOnly:      user.oauthOnly ?? false,
   followersCount: user.followersCount,
   followingCount: user.followingCount,
   postsCount:     user.postsCount,

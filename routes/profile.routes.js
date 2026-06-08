@@ -8,7 +8,6 @@ import {
   updateAvatarSchema,
   updateEmailSchema,
   updatePhoneSchema,
-  deactivateSchema,
 } from "../validators/profile.validators.js";
 
 const router = express.Router();
@@ -21,6 +20,6 @@ router.put("/avatar", validate(updateAvatarSchema), profileController.updateAvat
 // OTP-generating endpoints: rate-limited to 5/hour to prevent code-spam abuse
 router.put("/email",  sensitiveLimiter, validate(updateEmailSchema), profileController.updateEmail);
 router.put("/phone",  sensitiveLimiter, validate(updatePhoneSchema), profileController.updatePhone);
-router.post("/deactivate", sensitiveLimiter, validate(deactivateSchema), profileController.deactivate);
+router.post("/deactivate", sensitiveLimiter, profileController.deactivate);
 
 export default router;

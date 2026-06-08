@@ -27,6 +27,3 @@ export const updatePhoneSchema = z.object({
   countryCode: z.string().min(1).max(10).nullable().optional(),
 });
 
-export const deactivateSchema = z.object({
-  password: z.string().min(1, "Password required"),
-});

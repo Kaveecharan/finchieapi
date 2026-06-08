@@ -107,11 +107,14 @@ export const profileService = {
     if (!user) throw new AppError(404, "User not found", "NOT_FOUND");
     if (user.status === "deactivated") throw new AppError(400, "Account already deactivated", "INVALID_STATE");
 
-    // Verify password
-    if (!user.passwordHash) throw new ValidationError("Cannot deactivate OAuth-only accounts via password");
-    const pepperedPassword = pepperPassword(password);
-    const valid = await verifyPassword(pepperedPassword, user.passwordHash);
-    if (!valid) throw new AppError(401, "Incorrect password", "INVALID_CREDENTIALS");
+    // OAuth users have no passwordHash — skip password verification.
+    // Password-auth users must supply and pass the password check.
+    if (user.passwordHash) {
+      if (!password) throw new AppError(400, "Password required", "VALIDATION_ERROR");
+      const pepperedPassword = pepperPassword(password);
+      const valid = await verifyPassword(pepperedPassword, user.passwordHash);
+      if (!valid) throw new AppError(401, "Incorrect password", "INVALID_CREDENTIALS");
+    }
 
     // Deactivate: keep data for 30 days then auto-delete
     const deletedAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);

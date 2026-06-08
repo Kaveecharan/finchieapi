@@ -16,18 +16,33 @@ const getTransporter = () => {
   return transporter;
 };
 
+// 4xx SMTP codes and connection-level errors are transient (retry-safe).
+// 5xx codes are permanent delivery failures — no point retrying.
+const isTransientSmtpError = (err) => {
+  if (!err.responseCode) return true; // no code = network/connection failure
+  return Math.floor(err.responseCode / 100) === 4;
+};
+
 export const sendEmail = async (to, subject, html) => {
-  try {
-    await getTransporter().sendMail({
-      from: `"${env.EMAIL_FROM_NAME}" <${env.EMAIL_USER}>`,
-      to,
-      subject,
-      html,
-    });
-  } catch (err) {
-    logger.error({ event: "email_send_failed", to, subject, err: err.message });
-    throw err;
+  const MAX_ATTEMPTS = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      await getTransporter().sendMail({
+        from: `"${env.EMAIL_FROM_NAME}" <${env.EMAIL_USER}>`,
+        to,
+        subject,
+        html,
+      });
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientSmtpError(err) || attempt === MAX_ATTEMPTS) break;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
+    }
   }
+  logger.error({ event: "email_send_failed", to, subject, err: lastErr.message });
+  throw lastErr;
 };
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
