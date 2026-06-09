@@ -149,8 +149,33 @@ export const initiateSignup = async ({ email, password, firstName }, ip) => {
     existing.verificationAttempts = 0;
     await userRepository.save(existing);
   } else {
-    const username = await generateUsername(firstName);
+    // Active-filter lookup returned null — check for a deactivated account with this
+    // email before creating a new user. Without this check the create() below would
+    // trigger a MongoDB E11000 duplicate-key error on the unique email index.
+    const deactivated = await userRepository.findDeactivatedByEmailWithSecrets(lowerEmail);
+    if (deactivated) {
+      if (deactivated.oauthOnly) {
+        // Google-only account: they must use Google Sign-In to reactivate.
+        throw new ConflictError(
+          "This email was registered with Google Sign-In. Please sign in with Google to reactivate your account."
+        );
+      }
+      // Deactivated email/password account: treat as re-signup.
+      // Reset credentials and verification state so verifySignupCode can
+      // verify the new code and then reactivate the account.
+      deactivated.passwordHash = passwordHash;
+      deactivated.firstName = firstName.trim();
+      deactivated.isEmailVerified = false;
+      deactivated.verificationCodeHash = codeHash;
+      deactivated.verificationCodeExpires = codeExpires;
+      deactivated.verificationAttempts = 0;
+      await userRepository.save(deactivated);
+      await sendVerificationEmail(lowerEmail, firstName, code);
+      auditLog(AUDIT.SIGNUP, { email: lowerEmail, ip });
+      return;
+    }
 
+    const username = await generateUsername(firstName);
     await userRepository.create({
       email: lowerEmail,
       passwordHash,
@@ -170,7 +195,18 @@ export const verifySignupCode = async ({ email, code }, deviceInfo) => {
   const lowerEmail = email.toLowerCase().trim();
 
   // Fetch with secrets so we can read verificationCodeHash for comparison.
-  const user = await userRepository.findByEmailWithSecrets(lowerEmail);
+  let user = await userRepository.findByEmailWithSecrets(lowerEmail);
+  let wasDeactivated = false;
+
+  if (!user) {
+    // Active-filter lookup missed — check for a deactivated account that went through
+    // the re-signup path in initiateSignup (isEmailVerified was reset to false there).
+    const deactivated = await userRepository.findDeactivatedByEmailWithSecrets(lowerEmail);
+    if (deactivated && !deactivated.isEmailVerified && deactivated.verificationCodeHash) {
+      user = deactivated;
+      wasDeactivated = true;
+    }
+  }
 
   // Enumeration-safe: same error regardless of whether the user exists or is already verified.
   if (!user || user.isEmailVerified) {
@@ -217,6 +253,13 @@ export const verifySignupCode = async ({ email, code }, deviceInfo) => {
     // at this point since we just retrieved the user above.
     logger.error({ event: "markEmailVerified_returned_null", email: lowerEmail });
     throw new AppError("Verification failed unexpectedly. Please try again.", 500, "VERIFICATION_FAILED");
+  }
+
+  // Reactivate the account if this was a deactivated user going through re-signup.
+  // markEmailVerified uses _id (bypasses activeFilter) so the document is already
+  // updated — we now clear the deactivated status and deletedAt to make it active again.
+  if (wasDeactivated) {
+    await userRepository.reactivate(user.userId);
   }
 
   const tokens = await createSession(verifiedUser, deviceInfo);
