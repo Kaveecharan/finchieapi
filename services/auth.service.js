@@ -385,18 +385,22 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
   }
 
   let user = await userRepository.findByGoogleId(googleId);
+  let action;
+
   if (!user) {
     if (existingByEmail) {
       user = existingByEmail;
       user.googleId = googleId;
       if (!user.isEmailVerified) user.isEmailVerified = true;
       await userRepository.save(user);
+      action = "login";
     } else {
       // Check if this is a deactivated Google account logging back in
       const deactivated = await userRepository.findDeactivatedByGoogleId(googleId);
       if (deactivated) {
         await userRepository.reactivate(deactivated.userId);
         user = deactivated;
+        action = "reactivated";
       } else {
         const firstName = name || "User";
         const username = await generateUsername(firstName);
@@ -409,13 +413,16 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
           isEmailVerified: true,
           oauthOnly: true,
         });
+        action = "signup";
       }
     }
+  } else {
+    action = "login";
   }
 
   const tokens = await createSession(user, deviceInfo);
   auditLog(AUDIT.OAUTH_LOGIN, { userId: user.userId, provider: "google", ip: deviceInfo.ip });
-  return { ...tokens, user: publicProfile(user) };
+  return { ...tokens, user: publicProfile(user), action };
 };
 
 export const refreshTokens = async (rawRefreshToken, deviceInfo) => {
