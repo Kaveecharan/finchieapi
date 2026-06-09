@@ -247,13 +247,19 @@ export const login = async ({ email, password }, deviceInfo) => {
 
   await isAccountLocked(lowerEmail);
 
-  const user = await userRepository.findByEmailWithSecrets(lowerEmail);
+  let user = await userRepository.findByEmailWithSecrets(lowerEmail);
 
   if (!user) {
-    await verifyPassword(password, await getDummyHash());
-    await checkAndRecordFailedAttempt(lowerEmail, ip);
-    auditLog(AUDIT.LOGIN_FAILED, { email: lowerEmail, ip, reason: "user_not_found" });
-    throw new AuthError("Invalid credentials");
+    // Check if this is a deactivated account logging back in within the 30-day window
+    const deactivated = await userRepository.findDeactivatedByEmailWithSecrets(lowerEmail);
+    if (deactivated) {
+      user = deactivated;
+    } else {
+      await verifyPassword(password, await getDummyHash());
+      await checkAndRecordFailedAttempt(lowerEmail, ip);
+      auditLog(AUDIT.LOGIN_FAILED, { email: lowerEmail, ip, reason: "user_not_found" });
+      throw new AuthError("Invalid credentials");
+    }
   }
 
   // Block password login for Google-only accounts — do not reveal via timing
@@ -280,6 +286,11 @@ export const login = async ({ email, password }, deviceInfo) => {
   }
 
   await clearBruteForce(lowerEmail, ip);
+
+  // Reactivate deactivated account now that credentials are verified
+  if (user.status === "deactivated") {
+    await userRepository.reactivate(user.userId);
+  }
 
   if (user.mfaEnabled) {
     // Issue a short-lived challenge token; full session created only after TOTP verified
@@ -381,17 +392,24 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
       if (!user.isEmailVerified) user.isEmailVerified = true;
       await userRepository.save(user);
     } else {
-      const firstName = name || "User";
-      const username = await generateUsername(firstName);
-      user = await userRepository.create({
-        email: lowerEmail,
-        firstName,
-        displayName: firstName,
-        username,
-        googleId,
-        isEmailVerified: true,
-        oauthOnly: true,
-      });
+      // Check if this is a deactivated Google account logging back in
+      const deactivated = await userRepository.findDeactivatedByGoogleId(googleId);
+      if (deactivated) {
+        await userRepository.reactivate(deactivated.userId);
+        user = deactivated;
+      } else {
+        const firstName = name || "User";
+        const username = await generateUsername(firstName);
+        user = await userRepository.create({
+          email: lowerEmail,
+          firstName,
+          displayName: firstName,
+          username,
+          googleId,
+          isEmailVerified: true,
+          oauthOnly: true,
+        });
+      }
     }
   }
 

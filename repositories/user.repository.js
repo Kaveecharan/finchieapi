@@ -25,6 +25,21 @@ export const userRepository = {
   findByGoogleId: (googleId) =>
     User.findOne({ googleId, ...activeFilter }),
 
+  findDeactivatedByEmailWithSecrets: (email) =>
+    User.findOne({ email: email.toLowerCase(), status: "deactivated" }).select(
+      "+passwordHash +passwordHistory +mfaSecret +mfaBackupCodes +verificationCodeHash +resetCodeHash"
+    ),
+
+  findDeactivatedByGoogleId: (googleId) =>
+    User.findOne({ googleId, status: "deactivated" }),
+
+  reactivate: (userId) =>
+    User.findOneAndUpdate(
+      { userId },
+      { $set: { status: "active" }, $unset: { deactivatedAt: "", deletedAt: "" } },
+      { new: true }
+    ),
+
   create: (data) => User.create(data),
 
   save: (user) => user.save(),
