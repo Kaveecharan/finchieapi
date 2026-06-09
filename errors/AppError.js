@@ -16,8 +16,8 @@ export class ValidationError extends AppError {
 }
 
 export class AuthError extends AppError {
-  constructor(message = "Authentication required") {
-    super(message, 401, "UNAUTHORIZED");
+  constructor(message = "Authentication required", code = "UNAUTHORIZED") {
+    super(message, 401, code);
   }
 }
 
@@ -34,8 +34,8 @@ export class NotFoundError extends AppError {
 }
 
 export class ConflictError extends AppError {
-  constructor(message = "Resource already exists") {
-    super(message, 409, "CONFLICT");
+  constructor(message = "Resource already exists", code = "CONFLICT") {
+    super(message, 409, code);
   }
 }
 

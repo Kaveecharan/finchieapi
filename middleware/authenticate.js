@@ -16,7 +16,7 @@ export const authenticate = (req, res, next) => {
     };
     next();
   } catch {
-    next(new AuthError("Invalid or expired token"));
+    next(new AuthError("Invalid or expired token", "TOKEN_INVALID"));
   }
 };
 

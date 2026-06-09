@@ -77,6 +77,8 @@ app.use((err, req, res, next) => {
     // can back off without parsing the JSON body (RFC 6585 §4).
     if (err.retryAfter) res.setHeader("Retry-After", String(err.retryAfter));
     const body = {
+      success: false,
+      message: err.message,
       error: err.message,
       code: err.code,
       ...(err.errors?.length ? { errors: err.errors } : {}),
@@ -96,6 +98,8 @@ app.use((err, req, res, next) => {
   });
 
   res.status(500).json({
+    success: false,
+    message: "An unexpected error occurred",
     error: "An unexpected error occurred",
     code: "INTERNAL_ERROR",
     requestId: req.requestId,

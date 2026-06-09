@@ -128,9 +128,9 @@ export const initiateSignup = async ({ email, password, firstName }, ip) => {
   const existing = await userRepository.findByEmail(lowerEmail);
   if (existing?.isEmailVerified) {
     if (existing.oauthOnly) {
-      throw new ConflictError("This email is registered with Google. Please sign in with Google instead.");
+      throw new ConflictError("This email is registered with Google. Please sign in with Google instead.", "AUTH_GOOGLE_ACCOUNT_EXISTS");
     }
-    throw new ConflictError("Email already registered");
+    throw new ConflictError("Email already registered", "AUTH_EMAIL_ALREADY_EXISTS");
   }
 
   const passwordHash = await hashPassword(password);
@@ -140,7 +140,7 @@ export const initiateSignup = async ({ email, password, firstName }, ip) => {
 
   if (existing) {
     if (existing.oauthOnly) {
-      throw new ConflictError("This email is registered with Google. Please sign in with Google instead.");
+      throw new ConflictError("This email is registered with Google. Please sign in with Google instead.", "AUTH_GOOGLE_ACCOUNT_EXISTS");
     }
     existing.passwordHash = passwordHash;
     existing.firstName = firstName.trim();
@@ -157,7 +157,8 @@ export const initiateSignup = async ({ email, password, firstName }, ip) => {
       if (deactivated.oauthOnly) {
         // Google-only account: they must use Google Sign-In to reactivate.
         throw new ConflictError(
-          "This email was registered with Google Sign-In. Please sign in with Google to reactivate your account."
+          "This email was registered with Google Sign-In. Please sign in with Google to reactivate your account.",
+          "AUTH_GOOGLE_ACCOUNT_EXISTS"
         );
       }
       // Deactivated email/password account: treat as re-signup.
@@ -210,7 +211,7 @@ export const verifySignupCode = async ({ email, code }, deviceInfo) => {
 
   // Enumeration-safe: same error regardless of whether the user exists or is already verified.
   if (!user || user.isEmailVerified) {
-    throw new AuthError("Invalid or expired verification code");
+    throw new AuthError("Invalid or expired verification code", "OTP_INVALID");
   }
 
   if (user.verificationAttempts >= SECURITY.VERIFICATION_CODE.MAX_ATTEMPTS) {
@@ -223,7 +224,7 @@ export const verifySignupCode = async ({ email, code }, deviceInfo) => {
   if (!valid) {
     // Atomic $inc prevents TOCTOU races on the attempt counter.
     await userRepository.incrementVerificationAttempts(user._id);
-    throw new AuthError("Invalid or expired verification code");
+    throw new AuthError("Invalid or expired verification code", "OTP_INVALID");
   }
 
   // Defensive guard: every user created by initiateSignup gets a userId via the
@@ -301,31 +302,31 @@ export const login = async ({ email, password }, deviceInfo) => {
       await verifyPassword(password, await getDummyHash());
       await checkAndRecordFailedAttempt(lowerEmail, ip);
       auditLog(AUDIT.LOGIN_FAILED, { email: lowerEmail, ip, reason: "user_not_found" });
-      throw new AuthError("Invalid credentials");
+      throw new AuthError("Invalid credentials", "AUTH_INVALID_CREDENTIALS");
     }
   }
 
   // Block password login for Google-only accounts — do not reveal via timing
   if (user.oauthOnly) {
-    throw new AuthError("This account was created with Google Sign-In. Please sign in with Google instead.");
+    throw new AuthError("This account was created with Google Sign-In. Please sign in with Google instead.", "AUTH_GOOGLE_ACCOUNT_REQUIRED");
   }
 
   if (!user.passwordHash) {
     await verifyPassword(password, await getDummyHash());
     await checkAndRecordFailedAttempt(lowerEmail, ip);
     auditLog(AUDIT.LOGIN_FAILED, { email: lowerEmail, ip, reason: "no_password" });
-    throw new AuthError("Invalid credentials");
+    throw new AuthError("Invalid credentials", "AUTH_INVALID_CREDENTIALS");
   }
 
   if (!user.isEmailVerified) {
-    throw new AuthError("Email not verified");
+    throw new AuthError("Email not verified", "AUTH_EMAIL_NOT_VERIFIED");
   }
 
   const passwordValid = await verifyPassword(password, user.passwordHash);
   if (!passwordValid) {
     await checkAndRecordFailedAttempt(lowerEmail, ip);
     auditLog(AUDIT.LOGIN_FAILED, { userId: user.userId, ip, reason: "wrong_password" });
-    throw new AuthError("Invalid credentials");
+    throw new AuthError("Invalid credentials", "AUTH_INVALID_CREDENTIALS");
   }
 
   await clearBruteForce(lowerEmail, ip);
@@ -424,7 +425,7 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
   // linked to a password account through a bug or legacy state.
   const existingByEmail = await userRepository.findByEmailWithSecrets(lowerEmail);
   if (existingByEmail?.passwordHash) {
-    throw new ConflictError("An account already exists with this email. Please sign in using your email and password.");
+    throw new ConflictError("An account already exists with this email. Please sign in using your email and password.", "AUTH_EMAIL_ALREADY_EXISTS");
   }
 
   let user = await userRepository.findByGoogleId(googleId);
@@ -472,12 +473,12 @@ export const refreshTokens = async (rawRefreshToken, deviceInfo) => {
   const { session, payload } = await rotateSession(rawRefreshToken, deviceInfo);
 
   const user = await userRepository.findById(payload.sub);
-  if (!user) throw new AuthError("User not found");
+  if (!user) throw new AuthError("User not found", "TOKEN_INVALID");
 
   // Detect if password was changed after this session was created
   if (session.passwordVersion < user.passwordVersion) {
     await sessionRepository.revokeSession(session.sessionId, "password_changed");
-    throw new AuthError("Session invalidated — please log in again");
+    throw new AuthError("Session invalidated — please log in again", "TOKEN_EXPIRED");
   }
 
   return issueRotatedTokens(user, session, deviceInfo);
@@ -516,7 +517,7 @@ export const resetPassword = async ({ email, code, newPassword }, ip) => {
   if (policyErrors.length) throw new ValidationError("Password policy violation", policyErrors);
 
   const user = await userRepository.findByEmailWithSecrets(lowerEmail);
-  if (!user || !user.isEmailVerified) throw new AuthError("Invalid or expired code");
+  if (!user || !user.isEmailVerified) throw new AuthError("Invalid or expired code", "OTP_INVALID");
 
   // Brute-force guard: IP-only rate limiting is bypassable with IP rotation.
   // Per-user attempt counter locks the code after 5 failures regardless of IP.
@@ -528,7 +529,7 @@ export const resetPassword = async ({ email, code, newPassword }, ip) => {
   const valid = !expired && timingSafeCompare(user.resetCodeHash, hashCode(code));
   if (!valid) {
     await userRepository.incrementResetAttempts(user._id);
-    throw new AuthError("Invalid or expired code");
+    throw new AuthError("Invalid or expired code", "OTP_INVALID");
   }
 
   if (await isPasswordReused(newPassword, user.passwordHistory)) {
@@ -556,10 +557,10 @@ export const resetPassword = async ({ email, code, newPassword }, ip) => {
 export const changePassword = async (userId, { currentPassword, newPassword }, deviceInfo) => {
   const user = await userRepository.findByIdWithSecrets(userId);
   if (!user) throw new NotFoundError();
-  if (!user.passwordHash) throw new AuthError("Cannot change password for OAuth accounts");
+  if (!user.passwordHash) throw new AuthError("Cannot change password for OAuth accounts", "AUTH_GOOGLE_ACCOUNT_REQUIRED");
 
   const valid = await verifyPassword(currentPassword, user.passwordHash);
-  if (!valid) throw new AuthError("Current password is incorrect");
+  if (!valid) throw new AuthError("Current password is incorrect", "AUTH_PASSWORD_INCORRECT");
 
   const policyErrors = validatePasswordPolicy(newPassword);
   if (policyErrors.length) throw new ValidationError("Password policy violation", policyErrors);
