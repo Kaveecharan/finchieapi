@@ -72,6 +72,9 @@ const SubscriptionSchema = new Schema(
     // ── Grace period (past_due recovery window) ────────────────────────────
     gracePeriodEnd: { type: Date },
 
+    // ── Renewal reminder tracking (cron dedup) ────────────────────────────
+    renewalReminderSentAt: { type: Date, default: null },
+
     // ── Webhook idempotency ────────────────────────────────────────────────
     lastStripeEventId: { type: String },
     lastStripeEventAt: { type: Date },

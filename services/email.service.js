@@ -308,6 +308,30 @@ export const sendTrialEndingSoonEmail = (to, firstName, daysLeft) =>
     `)
   );
 
+export const sendRenewalReminderEmail = (to, firstName, { daysLeft, renewalDate, amount = 3.99, currency = "gbp", isTrial = false }) =>
+  sendEmail(
+    to,
+    `Your ${isTrial ? "free trial" : "subscription"} renews in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} — ${env.APP_NAME}`,
+    baseEmailLayout(`
+      ${title(`Renewing in ${daysLeft} Day${daysLeft !== 1 ? "s" : ""} ⏰`, C.warning)}
+      ${greeting(firstName)}
+      ${bodyText(isTrial
+        ? `Your 30-day free trial ends in <strong>${daysLeft} day${daysLeft !== 1 ? "s" : ""}</strong>. Your card will be charged <strong>${fmtAmount(amount, currency)}/month</strong> automatically to keep your premium access.`
+        : `Your Finchie Premium subscription renews in <strong>${daysLeft} day${daysLeft !== 1 ? "s" : ""}</strong>. Your card will be charged <strong>${fmtAmount(amount, currency)}</strong> automatically on <strong>${fmtDate(renewalDate)}</strong>.`
+      )}
+      ${metaTable([
+        { label: "Plan",                            value: "<strong>Finchie Premium</strong>" },
+        { label: "Amount",                          value: `${fmtAmount(amount, currency)} / month` },
+        { label: isTrial ? "Trial ends" : "Renews", value: fmtDate(renewalDate) },
+      ])}
+      ${alertBox(
+        "To avoid being charged, cancel before the renewal date from Profile → Settings → Subscription.",
+        "warning"
+      )}
+      ${note("If you'd like to keep your premium access, no action is needed — you'll be billed automatically.")}
+    `)
+  );
+
 export const sendPaymentSucceededEmail = (to, firstName, { amount, currency = "gbp", invoiceUrl, nextRenewalDate }) =>
   sendEmail(
     to,

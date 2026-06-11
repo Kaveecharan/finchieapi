@@ -5,6 +5,8 @@ import { connectRedis, closeRedis } from "./config/redis.js";
 import { startCleanupJobs } from "./jobs/cleanup.job.js";
 import { startUpcomingJobs } from "./jobs/upcoming.job.js";
 import { startInsightJobs } from "./jobs/insight.job.js";
+import { startFinanceScoreJob } from "./jobs/financeScore.job.js";
+import { startSubscriptionReminderJob } from "./jobs/subscription.job.js";
 import { logger } from "./utils/logger.js";
 import app from "./app.js";
 import http from "http";
@@ -26,6 +28,8 @@ const start = async () => {
   startCleanupJobs();
   startUpcomingJobs();
   startInsightJobs();
+  startFinanceScoreJob();
+  startSubscriptionReminderJob();
 
   server.listen(env.PORT, () => {
     logger.info({ event: "server_started", port: env.PORT, env: env.NODE_ENV });

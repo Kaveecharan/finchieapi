@@ -14,6 +14,7 @@ export const PREMIUM_FEATURES = new Set([
   "enhanced_charts",   // Heatmaps and advanced visualisations
   "priority_support",  // Priority support channel
   "insights",          // Scheduled daily financial insight push notifications
+  "finance_score",     // AI-powered Finance Score (0–500) with 14-day recalculation
 ]);
 
 // ── attachSubscription ────────────────────────────────────────────────────────

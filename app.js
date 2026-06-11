@@ -19,6 +19,7 @@ import supportRoutes       from "./routes/support.routes.js";
 import savingsRoutes            from "./routes/savings.routes.js";
 import chatRoutes               from "./routes/chat.routes.js";
 import subscriptionRoutes       from "./routes/subscription.routes.js";
+import financeScoreRoutes       from "./routes/financeScore.routes.js";
 import { env } from "./config/env.js";
 
 const app = express();
@@ -60,6 +61,7 @@ app.use("/support",        supportRoutes);
 app.use("/savings",        savingsRoutes);
 app.use("/chat",           chatRoutes);
 app.use("/subscriptions",  subscriptionRoutes);
+app.use("/finance-score",  financeScoreRoutes);
 
 app.get("/test", (req, res) => {
   res.json({ success: true, message: "API working properly" });
