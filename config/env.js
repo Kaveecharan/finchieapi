@@ -27,10 +27,11 @@ const schema = z.object({
   GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET:     z.string().optional(),
 
-  EMAIL_USER: z.string().email("EMAIL_USER must be a valid email"),
-  EMAIL_PASS: z.string().min(1, "EMAIL_PASS required"),
+  EMAIL_USER:      z.string().email("EMAIL_USER must be a valid email"),
+  EMAIL_PASS:      z.string().optional(),
+  BREVO_API_KEY:   z.string().min(1, "BREVO_API_KEY required"),
   EMAIL_FROM_NAME: z.string().default("Kodeum"),
-  SUPPORT_EMAIL: z.string().email().optional(), // falls back to EMAIL_USER if not set
+  SUPPORT_EMAIL:   z.string().email().optional(), // falls back to EMAIL_USER if not set
 
   MFA_ISSUER: z.string().default("Kodeum"),
   APP_NAME: z.string().default("Kodeum"),

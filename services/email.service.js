@@ -1,47 +1,38 @@
-import nodemailer from "nodemailer";
+import axios from "axios";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
-let transporter = null;
-
-const getTransporter = () => {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      service: "Gmail",
-      auth: { user: env.EMAIL_USER, pass: env.EMAIL_PASS },
-      pool: true,
-      maxConnections: 5,
-    });
-  }
-  return transporter;
-};
-
-// 4xx SMTP codes and connection-level errors are transient (retry-safe).
-// 5xx codes are permanent delivery failures — no point retrying.
-const isTransientSmtpError = (err) => {
-  if (!err.responseCode) return true; // no code = network/connection failure
-  return Math.floor(err.responseCode / 100) === 4;
-};
+const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 
 export const sendEmail = async (to, subject, html) => {
   const MAX_ATTEMPTS = 3;
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      await getTransporter().sendMail({
-        from: `"${env.EMAIL_FROM_NAME}" <${env.EMAIL_USER}>`,
-        to,
-        subject,
-        html,
-      });
+      await axios.post(
+        BREVO_SEND_URL,
+        {
+          sender:      { name: env.EMAIL_FROM_NAME, email: env.EMAIL_USER },
+          to:          [{ email: to }],
+          subject,
+          htmlContent: html,
+        },
+        {
+          headers: { "api-key": env.BREVO_API_KEY, "content-type": "application/json" },
+          timeout: 10_000,
+        }
+      );
       return;
     } catch (err) {
       lastErr = err;
-      if (!isTransientSmtpError(err) || attempt === MAX_ATTEMPTS) break;
+      const status = err?.response?.status;
+      // 4xx (except 429 rate-limit) are permanent — no point retrying
+      if (status && status >= 400 && status < 500 && status !== 429) break;
+      if (attempt === MAX_ATTEMPTS) break;
       await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
     }
   }
-  logger.error({ event: "email_send_failed", to, subject, err: lastErr.message });
+  logger.error({ event: "email_send_failed", to, subject, err: lastErr?.message });
   throw lastErr;
 };
 
