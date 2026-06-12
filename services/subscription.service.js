@@ -183,10 +183,13 @@ export const subscriptionService = {
     // duplicate Stripe subscription being created for the same user.
     const idempotencyKey = `finchie-activate-${userId}-${new Date().toISOString().slice(0, 10)}`;
 
+    // No trial for returning users — trialStart being set means they already used their free trial.
+    const trialDays = sub.trialStart ? 0 : 30;
+
     const stripeSub = await stripeService.createSubscription(
       sub.stripeCustomerId,
       env.STRIPE_PRICE_ID,
-      30,
+      trialDays,
       idempotencyKey
     );
 
