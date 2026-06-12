@@ -30,6 +30,24 @@ const getUserByCustomerId = async (customerId) => {
 const normaliseStatus = (stripeStatus) =>
   stripeStatus === "canceled" ? "cancelled" : stripeStatus;
 
+// Derives the complete, deterministic MongoDB subscription state from a Stripe
+// subscription object. All customer.subscription.* events pass through here so
+// state is never patched field-by-field — the entire shape is recomputed from
+// Stripe's authoritative object on every delivery.
+const resolveSubscriptionState = (stripeSub) => {
+  const normStatus = normaliseStatus(stripeSub.status);
+  return {
+    stripeSubscriptionId: stripeSub.id,
+    plan:               ["trialing", "active"].includes(normStatus) ? "premium" : "free",
+    status:             normStatus,
+    trialStart:         fromStripeTimestamp(stripeSub.trial_start),
+    trialEnd:           fromStripeTimestamp(stripeSub.trial_end),
+    currentPeriodStart: fromStripeTimestamp(stripeSub.current_period_start),
+    currentPeriodEnd:   fromStripeTimestamp(stripeSub.current_period_end),
+    cancelAtPeriodEnd:  stripeSub.cancel_at_period_end ?? false,
+  };
+};
+
 const formatForClient = (sub) => {
   if (!sub) return { plan: "free", status: "expired", isPremium: false };
   return {
@@ -41,7 +59,6 @@ const formatForClient = (sub) => {
     currentPeriodStart: sub.currentPeriodStart,
     currentPeriodEnd:   sub.currentPeriodEnd,
     cancelAtPeriodEnd:  sub.cancelAtPeriodEnd ?? false,
-    gracePeriodEnd:     sub.gracePeriodEnd ?? null,
   };
 };
 
@@ -344,59 +361,77 @@ export const subscriptionService = {
 
   // POST /subscriptions/webhook
   handleWebhookEvent: async (event) => {
-    const { type, id: eventId } = event;
+    const { type, id: eventId, created } = event;
     const obj = event.data.object;
 
-    // Idempotency is enforced atomically per-case via findOneAndUpdate with
-    // { lastStripeEventId: { $ne: eventId } }. MongoDB's document-level
-    // atomicity means only one concurrent delivery can write the eventId —
-    // the second sees it already set and gets null back (no email sent).
-    // This eliminates the TOCTOU window of a separate exists() + update.
-    const meta     = { lastStripeEventId: eventId, lastStripeEventAt: new Date() };
-    const notSeen  = { lastStripeEventId: { $ne: eventId } };
-    const logWarn  = (err) => logger.warn({ event: "email_send_failed", err: err.message });
+    // Stripe event timestamps are Unix seconds — convert once.
+    const eventCreatedAt = new Date(created * 1000);
+
+    // stateGuard: two-layer protection for state-mutating events.
+    //   Layer 1 — idempotency:  same eventId is never processed twice.
+    //   Layer 2 — ordering:     out-of-order events with an older timestamp
+    //             than the last processed event are silently skipped.
+    //             Example: subscription.updated (T+1) arriving after
+    //             invoice.payment_failed (T+5) must not overwrite past_due→free
+    //             with the earlier stale active state.
+    // MongoDB document-level atomicity means only one concurrent write wins —
+    // the second delivery sees the eventId already set and gets null back.
+    const stateGuard = (customerId) => ({
+      stripeCustomerId:  customerId,
+      lastStripeEventId: { $ne: eventId },
+      $or: [
+        { lastStripeEventAt: null },
+        { lastStripeEventAt: { $lte: eventCreatedAt } },
+      ],
+    });
+
+    // emailGuard: idempotency only — no timestamp ordering.
+    // Used for email-only events that carry no state change. Applying the
+    // timestamp guard here would suppress the email whenever a newer state
+    // event has already advanced lastStripeEventAt, which is wrong — the
+    // email must be delivered exactly once on first receipt regardless.
+    const emailGuard = (customerId) => ({
+      stripeCustomerId:  customerId,
+      lastStripeEventId: { $ne: eventId },
+    });
+
+    const stateMeta = { lastStripeEventId: eventId, lastStripeEventAt: eventCreatedAt };
+    const logWarn   = (err) => logger.warn({ event: "email_send_failed", err: err.message });
 
     switch (type) {
       case "customer.subscription.created":
       case "customer.subscription.updated": {
+        // resolveSubscriptionState recomputes the full shape from Stripe's object —
+        // no field-by-field patching that could leave plan/status out of sync.
+        const state   = resolveSubscriptionState(obj);
         const updated = await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer, ...notSeen },
-          {
-            $set: {
-              stripeSubscriptionId: obj.id,
-              plan:               "premium",
-              status:             normaliseStatus(obj.status),
-              trialStart:         fromStripeTimestamp(obj.trial_start),
-              trialEnd:           fromStripeTimestamp(obj.trial_end),
-              currentPeriodStart: fromStripeTimestamp(obj.current_period_start),
-              currentPeriodEnd:   fromStripeTimestamp(obj.current_period_end),
-              cancelAtPeriodEnd:  obj.cancel_at_period_end,
-              ...meta,
-            },
-          }
+          stateGuard(obj.customer),
+          { $set: { ...state, ...stateMeta } }
         );
-        if (!updated) logger.info({ event: "stripe_webhook_duplicate", eventId, type });
+        if (!updated) logger.info({ event: "stripe_webhook_skipped", eventId, type });
         break;
       }
 
+      // invoice.paid is the current Stripe event name; invoice.payment_succeeded
+      // is its legacy alias — Stripe may fire both; handle identically.
+      case "invoice.paid":
       case "invoice.payment_succeeded": {
         if (!obj.subscription) break;
         const updatedSub = await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer, ...notSeen },
+          stateGuard(obj.customer),
           {
             $set: {
               status:             "active",
               plan:               "premium",
               currentPeriodStart: fromStripeTimestamp(obj.period_start),
               currentPeriodEnd:   fromStripeTimestamp(obj.period_end),
-              gracePeriodEnd:     null,
-              ...meta,
+              ...stateMeta,
             },
           },
           { new: true }
         );
-        if (!updatedSub) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
-        // Send payment confirmation email only on first processing (skip $0 trial invoices)
+        if (!updatedSub) { logger.info({ event: "stripe_webhook_skipped", eventId, type }); break; }
+        // Skip $0 invoices (trial start) — only send email for real charges.
         if (obj.amount_paid > 0) {
           getUserByCustomerId(obj.customer).then((user) => {
             if (user) {
@@ -413,28 +448,32 @@ export const subscriptionService = {
       }
 
       case "invoice.payment_failed": {
-        const gracePeriodEnd = obj.next_payment_attempt
-          ? fromStripeTimestamp(obj.next_payment_attempt)
-          : new Date(Date.now() + 3 * 86_400_000);
-
+        if (!obj.subscription) break;
+        // Immediate revoke — no grace period. plan → free so isPremiumActive
+        // returns false on the very next request even before the subscription
+        // object is updated by a subsequent customer.subscription.updated event.
         const updated = await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer, ...notSeen },
-          { $set: { status: "past_due", gracePeriodEnd, ...meta } }
+          stateGuard(obj.customer),
+          { $set: { status: "past_due", plan: "free", ...stateMeta } }
         );
-        if (!updated) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
+        if (!updated) { logger.info({ event: "stripe_webhook_skipped", eventId, type }); break; }
+        logger.warn({ event: "subscription_payment_failed", customerId: obj.customer });
         getUserByCustomerId(obj.customer).then((user) => {
-          if (user) sendPaymentFailedEmail(user.email, user.firstName, { gracePeriodEnd }).catch(logWarn);
+          if (user) sendPaymentFailedEmail(user.email, user.firstName).catch(logWarn);
         });
         break;
       }
 
       case "customer.subscription.trial_will_end": {
-        // No status change — stamp the event on the doc for idempotent email delivery.
+        // Email-only — no state fields change. emailGuard (no timestamp check)
+        // ensures delivery even when a newer state event has already run.
+        // Only lastStripeEventId is stamped so lastStripeEventAt is not
+        // regressed to this earlier event's timestamp.
         const updated = await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer, ...notSeen },
-          { $set: meta }
+          emailGuard(obj.customer),
+          { $set: { lastStripeEventId: eventId } }
         );
-        if (!updated) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
+        if (!updated) { logger.info({ event: "stripe_webhook_skipped", eventId, type }); break; }
         const daysLeft = Math.ceil(
           (fromStripeTimestamp(obj.trial_end) - Date.now()) / 86_400_000
         );
@@ -446,11 +485,15 @@ export const subscriptionService = {
       }
 
       case "customer.subscription.deleted": {
+        // Use resolver for base data (periods, ids) then force terminal state.
+        // "expired" is our own sentinel — distinct from "cancelled" — that marks
+        // a subscription fully ended with no recovery path except re-subscribing.
+        const state   = resolveSubscriptionState(obj);
         const updated = await Subscription.findOneAndUpdate(
-          { stripeCustomerId: obj.customer, ...notSeen },
-          { $set: { status: "expired", plan: "free", ...meta } }
+          stateGuard(obj.customer),
+          { $set: { ...state, status: "expired", plan: "free", ...stateMeta } }
         );
-        if (!updated) { logger.info({ event: "stripe_webhook_duplicate", eventId, type }); break; }
+        if (!updated) { logger.info({ event: "stripe_webhook_skipped", eventId, type }); break; }
         getUserByCustomerId(obj.customer).then((user) => {
           if (user) sendSubscriptionExpiredEmail(user.email, user.firstName).catch(logWarn);
         });

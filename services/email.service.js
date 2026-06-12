@@ -342,16 +342,16 @@ export const sendPaymentSucceededEmail = (to, firstName, { amount, currency = "g
     `)
   );
 
-export const sendPaymentFailedEmail = (to, firstName, { gracePeriodEnd }) =>
+export const sendPaymentFailedEmail = (to, firstName) =>
   sendEmail(
     to,
     `Payment failed — action required — ${env.APP_NAME}`,
     baseEmailLayout(`
       ${title("Payment Failed", C.danger)}
       ${greeting(firstName)}
-      ${bodyText("We were unable to process your subscription payment. Please update your payment method to keep your premium access.")}
+      ${bodyText("We were unable to process your subscription payment. Your premium access has been suspended immediately.")}
       ${alertBox(
-        `Your premium access continues until <strong>${gracePeriodEnd ? fmtDate(gracePeriodEnd) : "the grace period ends"}</strong>. After that your subscription will be suspended.`,
+        "Your account has been downgraded to the free plan. Update your payment method to restore premium access.",
         "danger"
       )}
       ${bodyText("To update your card, open the app and go to Profile → Settings → Subscription & Billing → Update Card.")}

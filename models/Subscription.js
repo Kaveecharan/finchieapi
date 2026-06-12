@@ -4,24 +4,15 @@ const { Schema } = mongoose;
 
 // ── Status helper — works on plain objects and Mongoose documents ──────────────
 // Centralised here so the same logic is used in models, services and middleware.
-export const isPremiumActive = (sub) => {
+// STRICT RULE: premium access requires status in {trialing, active}
+// AND the current billing period must not have expired.
+// past_due / cancelled / expired / missing → always false, no exceptions.
+export const isPremiumActive = (sub, now = new Date()) => {
   if (!sub) return false;
-  const now = Date.now();
-  switch (sub.status) {
-    case "trialing":
-      return !sub.trialEnd || now <= new Date(sub.trialEnd).getTime();
-    case "active":
-      return true;
-    case "cancelled":
-      // Premium access continues until the paid period expires
-      return !!sub.currentPeriodEnd && now <= new Date(sub.currentPeriodEnd).getTime();
-    case "past_due":
-      // Honour a grace period window after payment failure
-      if (sub.gracePeriodEnd && now <= new Date(sub.gracePeriodEnd).getTime()) return true;
-      return !!sub.currentPeriodEnd && now <= new Date(sub.currentPeriodEnd).getTime();
-    default:
-      return false;
-  }
+  if (sub.status !== "trialing" && sub.status !== "active") return false;
+  if (!sub.currentPeriodEnd) return false;
+  const ts = now instanceof Date ? now.getTime() : Number(now);
+  return ts < new Date(sub.currentPeriodEnd).getTime();
 };
 
 // ── Days remaining in trial/period ────────────────────────────────────────────
@@ -68,9 +59,6 @@ const SubscriptionSchema = new Schema(
     // True when the user cancelled but the paid period has not ended yet.
     cancelAtPeriodEnd: { type: Boolean, default: false },
     cancelledAt:       { type: Date },
-
-    // ── Grace period (past_due recovery window) ────────────────────────────
-    gracePeriodEnd: { type: Date },
 
     // ── Renewal reminder tracking (cron dedup) ────────────────────────────
     renewalReminderSentAt: { type: Date, default: null },
