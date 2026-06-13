@@ -53,11 +53,15 @@ const resolveSubscriptionState = (stripeSub) => {
 };
 
 const formatForClient = (sub) => {
-  if (!sub) return { plan: "free", status: "expired", isPremium: false };
+  if (!sub) return { plan: "free", status: "expired", isPremium: false, hadTrial: false };
   return {
     plan:               sub.plan,
     status:             sub.status,
     isPremium:          isPremiumActive(sub),
+    // True if the user ever went through the subscription flow.
+    // stripeSubscriptionId is the authoritative signal — trialStart alone can be
+    // null for older records. New users have neither field set.
+    hadTrial:           !!(sub.trialStart || sub.stripeSubscriptionId),
     trialStart:         sub.trialStart,
     trialEnd:           sub.trialEnd,
     currentPeriodStart: sub.currentPeriodStart,
@@ -187,8 +191,9 @@ export const subscriptionService = {
     // duplicate Stripe subscription being created for the same user.
     const idempotencyKey = `finchie-activate-${userId}-${new Date().toISOString().slice(0, 10)}`;
 
-    // No trial for returning users — trialStart being set means they already used their free trial.
-    const trialDays = sub.trialStart ? 0 : 30;
+    // No trial for returning users. Check both trialStart and stripeSubscriptionId —
+    // trialStart can be null on older records even when a subscription existed.
+    const trialDays = (sub.trialStart || sub.stripeSubscriptionId) ? 0 : 30;
 
     const stripeSub = await stripeService.createSubscription(
       sub.stripeCustomerId,
