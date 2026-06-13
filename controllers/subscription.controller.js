@@ -71,6 +71,12 @@ export const subscriptionController = {
     res.json({ success: true, data });
   }),
 
+  // POST /subscriptions/retry-payment
+  retryPayment: asyncHandler(async (req, res) => {
+    const data = await subscriptionService.retryPayment(req.user.userId);
+    res.json({ success: true, data });
+  }),
+
   // POST /subscriptions/update-payment/setup
   setupUpdatePayment: asyncHandler(async (req, res) => {
     const data = await subscriptionService.setupUpdatePayment(req.user.userId);

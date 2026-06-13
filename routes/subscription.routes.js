@@ -29,6 +29,7 @@ router.post("/activate", sensitiveLimiter, subscriptionController.activate);
 router.post("/cancel",                    subscriptionController.cancel);
 router.post("/reactivate",                subscriptionController.reactivate);
 
+router.post("/retry-payment",  sensitiveLimiter, subscriptionController.retryPayment);
 router.post("/update-payment/setup",   subscriptionController.setupUpdatePayment);
 router.post(
   "/update-payment/confirm",

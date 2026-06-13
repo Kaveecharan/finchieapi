@@ -86,6 +86,12 @@ export const stripeService = {
   listInvoices: (customerId, limit = 24) =>
     stripe().invoices.list({ customer: customerId, limit }),
 
+  listOpenInvoices: (customerId) =>
+    stripe().invoices.list({ customer: customerId, status: "open", limit: 5 }),
+
+  payInvoice: (invoiceId) =>
+    stripe().invoices.pay(invoiceId),
+
   // ── Webhook ────────────────────────────────────────────────────────────────
   // Requires raw (unparsed) body — registered before express.json() in app.js.
   constructWebhookEvent: (rawBody, signature) => {

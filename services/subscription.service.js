@@ -327,6 +327,50 @@ export const subscriptionService = {
     }));
   },
 
+  // POST /subscriptions/retry-payment
+  // Attempts to pay the open invoice with the card already on file.
+  // Only valid when status === "past_due".
+  retryPayment: async (userId) => {
+    assertStripeConfigured();
+
+    const sub = await Subscription.findOne({ userId }).lean();
+    if (!sub?.stripeCustomerId) throw new AppError("No subscription found.", 404, "NOT_FOUND");
+    if (sub.status !== "past_due") {
+      throw new AppError("No outstanding payment to retry.", 400, "INVALID_STATE");
+    }
+
+    const { data: openInvoices } = await stripeService.listOpenInvoices(sub.stripeCustomerId);
+    if (!openInvoices.length) {
+      throw new AppError("No outstanding invoice found.", 404, "NOT_FOUND");
+    }
+
+    try {
+      await stripeService.payInvoice(openInvoices[0].id);
+    } catch (err) {
+      if (err?.type === "StripeCardError") {
+        throw new AppError(
+          err.message || "Payment was declined. Please update your payment method.",
+          402,
+          "PAYMENT_DECLINED"
+        );
+      }
+      throw err;
+    }
+
+    // Invoice paid — immediately reflect active state so the next API call
+    // sees the correct plan without waiting for the webhook round-trip.
+    // The invoice.paid webhook will also fire; the idempotency guard handles the
+    // duplicate update safely.
+    const updated = await Subscription.findOneAndUpdate(
+      { userId },
+      { $set: { status: "active", plan: "premium" } },
+      { new: true }
+    );
+
+    logger.info({ event: "subscription_payment_retried", userId });
+    return formatForClient(updated);
+  },
+
   // POST /subscriptions/update-payment/setup
   setupUpdatePayment: async (userId) => {
     assertStripeConfigured();
