@@ -39,9 +39,11 @@ export const subscriptionController = {
   }),
 
   // POST /subscriptions/activate
-  // Creates the Stripe subscription (with 30-day trial) after Payment Sheet confirms
+  // Creates the Stripe subscription (with 30-day trial) after Payment Sheet confirms.
+  // Expects { paymentMethodId } in the body — the PM ID from the confirmed SetupIntent.
   activate: asyncHandler(async (req, res) => {
-    const data = await subscriptionService.activate(req.user.userId);
+    const { paymentMethodId } = req.body;
+    const data = await subscriptionService.activate(req.user.userId, paymentMethodId);
     res.json({ success: true, data });
   }),
 

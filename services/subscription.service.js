@@ -159,7 +159,9 @@ export const subscriptionService = {
 
   // POST /subscriptions/activate
   // Called after the Stripe Payment Sheet confirms the card.
-  activate: async (userId) => {
+  // paymentMethodId: the PaymentMethod ID from the confirmed SetupIntent —
+  //   must be passed so Stripe knows which card to charge at trial end or immediately.
+  activate: async (userId, paymentMethodId) => {
     assertStripeConfigured();
 
     const sub = await Subscription.findOne({ userId });
@@ -186,6 +188,13 @@ export const subscriptionService = {
       throw new AppError(msg, 409, "ALREADY_SUBSCRIBED");
     }
 
+    // Attach the confirmed PaymentMethod as the customer's default so that
+    // Stripe uses it for all future invoices (trial end, renewals, retry).
+    // This is the critical step the prior implementation was missing.
+    if (paymentMethodId) {
+      await stripeService.updateDefaultPaymentMethod(sub.stripeCustomerId, null, paymentMethodId);
+    }
+
     // Deterministic idempotency key (daily window) — if two requests race,
     // Stripe returns the same subscription object for both, preventing a
     // duplicate Stripe subscription being created for the same user.
@@ -199,6 +208,7 @@ export const subscriptionService = {
       sub.stripeCustomerId,
       env.STRIPE_PRICE_ID,
       trialDays,
+      paymentMethodId,   // explicitly set on subscription — Stripe charges this card
       idempotencyKey
     );
 
@@ -351,9 +361,24 @@ export const subscriptionService = {
       throw new AppError("No outstanding invoice found.", 404, "NOT_FOUND");
     }
 
+    // Resolve which card to charge — subscription default → customer default → first attached card.
+    // Without this, stripe.invoices.pay() throws "no default_payment_method" when
+    // the customer record was created before the activation fix was deployed.
+    const pmId = await stripeService.getDefaultPaymentMethodId(
+      sub.stripeCustomerId,
+      sub.stripeSubscriptionId
+    );
+    if (!pmId) {
+      throw new AppError(
+        "No payment method on file. Please add a card before retrying.",
+        400,
+        "NO_PAYMENT_METHOD"
+      );
+    }
+
     let paidInvoice;
     try {
-      paidInvoice = await stripeService.payInvoice(openInvoices[0].id);
+      paidInvoice = await stripeService.payInvoice(openInvoices[0].id, pmId);
     } catch (err) {
       if (err?.type === "StripeCardError") {
         throw new AppError(

@@ -34,12 +34,15 @@ export const stripeService = {
     }),
 
   // ── Subscription ───────────────────────────────────────────────────────────
-  createSubscription: (customerId, priceId, trialDays = 30, idempotencyKey) =>
+  createSubscription: (customerId, priceId, trialDays = 30, defaultPaymentMethodId, idempotencyKey) =>
     stripe().subscriptions.create(
       {
         customer: customerId,
         items: [{ price: priceId }],
         trial_period_days: trialDays,
+        // Explicitly set the payment method so Stripe knows which card to charge
+        // at the end of the trial (or immediately for no-trial subscriptions).
+        ...(defaultPaymentMethodId ? { default_payment_method: defaultPaymentMethodId } : {}),
         payment_settings: {
           payment_method_types: ["card"],
           save_default_payment_method: "on_subscription",
@@ -89,8 +92,26 @@ export const stripeService = {
   listOpenInvoices: (customerId) =>
     stripe().invoices.list({ customer: customerId, status: "open", limit: 5 }),
 
-  payInvoice: (invoiceId) =>
-    stripe().invoices.pay(invoiceId),
+  payInvoice: (invoiceId, paymentMethodId) =>
+    stripe().invoices.pay(invoiceId, paymentMethodId ? { payment_method: paymentMethodId } : {}),
+
+  // Returns the default_payment_method ID for a customer — checks subscription
+  // first, then customer invoice_settings, then first attached card.
+  getDefaultPaymentMethodId: async (customerId, subscriptionId) => {
+    if (subscriptionId) {
+      const sub = await stripe().subscriptions.retrieve(subscriptionId, {
+        expand: ["default_payment_method"],
+      });
+      const pm = sub.default_payment_method;
+      if (pm) return typeof pm === "string" ? pm : pm.id;
+    }
+    const customer = await stripe().customers.retrieve(customerId);
+    const fromCustomer = customer.invoice_settings?.default_payment_method;
+    if (fromCustomer) return typeof fromCustomer === "string" ? fromCustomer : fromCustomer.id;
+    // Last resort: first attached card
+    const { data: pms } = await stripe().paymentMethods.list({ customer: customerId, type: "card", limit: 1 });
+    return pms[0]?.id ?? null;
+  },
 
   // ── Webhook ────────────────────────────────────────────────────────────────
   // Requires raw (unparsed) body — registered before express.json() in app.js.
