@@ -36,16 +36,20 @@ const normaliseStatus = (stripeStatus) =>
 // Stripe's authoritative object on every delivery.
 const resolveSubscriptionState = (stripeSub) => {
   const normStatus = normaliseStatus(stripeSub.status);
-  return {
+  const state = {
     stripeSubscriptionId: stripeSub.id,
     plan:               ["trialing", "active"].includes(normStatus) ? "premium" : "free",
     status:             normStatus,
-    trialStart:         fromStripeTimestamp(stripeSub.trial_start),
-    trialEnd:           fromStripeTimestamp(stripeSub.trial_end),
     currentPeriodStart: fromStripeTimestamp(stripeSub.current_period_start),
     currentPeriodEnd:   fromStripeTimestamp(stripeSub.current_period_end),
     cancelAtPeriodEnd:  stripeSub.cancel_at_period_end ?? false,
   };
+  // Only write trial dates when Stripe reports them. Omitting undefined here
+  // preserves historical trial dates in the DB — critical for preventing a
+  // second free trial when a user re-subscribes after their first trial ended.
+  if (stripeSub.trial_start) state.trialStart = fromStripeTimestamp(stripeSub.trial_start);
+  if (stripeSub.trial_end)   state.trialEnd   = fromStripeTimestamp(stripeSub.trial_end);
+  return state;
 };
 
 const formatForClient = (sub) => {
@@ -193,21 +197,24 @@ export const subscriptionService = {
       idempotencyKey
     );
 
+    const activateFields = {
+      stripeSubscriptionId: stripeSub.id,
+      stripePriceId:        env.STRIPE_PRICE_ID,
+      plan:                 "premium",
+      status:               normaliseStatus(stripeSub.status),
+      currentPeriodStart:   fromStripeTimestamp(stripeSub.current_period_start),
+      currentPeriodEnd:     fromStripeTimestamp(stripeSub.current_period_end),
+      cancelAtPeriodEnd:    false,
+    };
+    // Preserve historical trial dates — only write when Stripe reports them so
+    // a no-trial re-subscription never clears the stored trialStart that guards
+    // against issuing a second free trial.
+    if (stripeSub.trial_start) activateFields.trialStart = fromStripeTimestamp(stripeSub.trial_start);
+    if (stripeSub.trial_end)   activateFields.trialEnd   = fromStripeTimestamp(stripeSub.trial_end);
+
     const updated = await Subscription.findOneAndUpdate(
       { userId },
-      {
-        $set: {
-          stripeSubscriptionId: stripeSub.id,
-          stripePriceId:        env.STRIPE_PRICE_ID,
-          plan:                 "premium",
-          status:               normaliseStatus(stripeSub.status),
-          trialStart:           fromStripeTimestamp(stripeSub.trial_start),
-          trialEnd:             fromStripeTimestamp(stripeSub.trial_end),
-          currentPeriodStart:   fromStripeTimestamp(stripeSub.current_period_start),
-          currentPeriodEnd:     fromStripeTimestamp(stripeSub.current_period_end),
-          cancelAtPeriodEnd:    false,
-        },
-      },
+      { $set: activateFields },
       { new: true }
     );
 
