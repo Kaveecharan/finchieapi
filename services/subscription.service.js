@@ -324,7 +324,9 @@ export const subscriptionService = {
       id:         inv.id,
       number:     inv.number,
       date:       fromStripeTimestamp(inv.created),
-      amount:     inv.amount_paid / 100,
+      // Use amount_due for unpaid invoices so the owed amount is shown correctly.
+      // amount_paid is 0 for open/failed invoices which makes them look like £0 entries.
+      amount:     inv.status === "paid" ? inv.amount_paid / 100 : inv.amount_due / 100,
       currency:   inv.currency,
       status:     inv.status,
       invoiceUrl: inv.hosted_invoice_url,
@@ -349,8 +351,9 @@ export const subscriptionService = {
       throw new AppError("No outstanding invoice found.", 404, "NOT_FOUND");
     }
 
+    let paidInvoice;
     try {
-      await stripeService.payInvoice(openInvoices[0].id);
+      paidInvoice = await stripeService.payInvoice(openInvoices[0].id);
     } catch (err) {
       if (err?.type === "StripeCardError") {
         throw new AppError(
@@ -373,6 +376,19 @@ export const subscriptionService = {
     );
 
     logger.info({ event: "subscription_payment_retried", userId });
+
+    // Send invoice email immediately — don't rely solely on webhook delivery timing.
+    User.findOne({ userId }, { email: 1, firstName: 1 }).lean().then((user) => {
+      if (user) {
+        sendPaymentSucceededEmail(user.email, user.firstName, {
+          amount:          paidInvoice.amount_paid / 100,
+          currency:        paidInvoice.currency,
+          invoiceUrl:      paidInvoice.hosted_invoice_url,
+          nextRenewalDate: updated.currentPeriodEnd,
+        }).catch((err) => logger.warn({ event: "email_send_failed", err: err.message }));
+      }
+    });
+
     return formatForClient(updated);
   },
 
