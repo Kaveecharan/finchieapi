@@ -498,13 +498,21 @@ export const sendPasswordReset = async (email, ip) => {
   const lowerEmail = email.toLowerCase().trim();
   const user = await userRepository.findByEmailWithSecrets(lowerEmail);
 
-  // Always return success to prevent email enumeration
-  if (!user || !user.isEmailVerified) return;
+  if (!user || !user.isEmailVerified) {
+    throw new AuthError("No account found with this email address.", "ACCOUNT_NOT_FOUND");
+  }
+
+  if (user.oauthOnly) {
+    throw new AuthError(
+      "This email is registered with Google Sign-In. Please tap 'Sign in with Google' instead.",
+      "AUTH_GOOGLE_ACCOUNT_REQUIRED"
+    );
+  }
 
   const code = generateCode(6);
   user.resetCodeHash = hashCode(code);
   user.resetCodeExpires = new Date(Date.now() + SECURITY.VERIFICATION_CODE.EXPIRY_MS);
-  user.resetAttempts = 0; // fresh code — reset counter so previous failed attempts don't carry over
+  user.resetAttempts = 0;
   await userRepository.save(user);
 
   await sendPasswordResetEmail(lowerEmail, user.firstName, code);
