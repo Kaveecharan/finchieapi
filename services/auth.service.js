@@ -351,10 +351,10 @@ export const login = async ({ email, password }, deviceInfo) => {
 
 export const verifyMfaLogin = async ({ mfaToken, code, backupCode }, deviceInfo) => {
   const challenge = await consumeMfaChallenge(mfaToken);
-  if (!challenge) throw new AuthError("MFA challenge expired or invalid");
+  if (!challenge) throw new AuthError("MFA session expired. Please sign in again.", "OTP_EXPIRED");
 
   const user = await userRepository.findByIdWithSecrets(challenge.userId);
-  if (!user) throw new AuthError("User not found");
+  if (!user) throw new AuthError("Invalid credentials", "AUTH_INVALID_CREDENTIALS");
 
   if (code) {
     // Prevent replay: the same TOTP code must not be accepted twice within its window.
@@ -365,20 +365,20 @@ export const verifyMfaLogin = async ({ mfaToken, code, backupCode }, deviceInfo)
       const alreadyUsed = await redis.get(replayKey);
       if (alreadyUsed) {
         auditLog(AUDIT.MFA_FAILED, { userId: user.userId, ip: deviceInfo.ip, reason: "totp_replay" });
-        throw new AuthError("TOTP code already used. Wait for the next code.");
+        throw new AuthError("TOTP code already used. Wait for the next code.", "OTP_INVALID");
       }
       // Mark before verifying — prevents a race where two concurrent requests both pass
       await redis.setex(replayKey, 90, "1");
     }
     if (!verifyTotp(code, user.mfaSecret)) {
       auditLog(AUDIT.MFA_FAILED, { userId: user.userId, ip: deviceInfo.ip });
-      throw new AuthError("Invalid TOTP code");
+      throw new AuthError("Invalid authenticator code", "OTP_INVALID");
     }
   } else if (backupCode) {
     const idx = findBackupCode(backupCode, user.mfaBackupCodes);
     if (idx === -1) {
       auditLog(AUDIT.MFA_FAILED, { userId: user.userId, ip: deviceInfo.ip, type: "backup" });
-      throw new AuthError("Invalid backup code");
+      throw new AuthError("Invalid backup code", "OTP_INVALID");
     }
     // Consume the backup code — it's single-use
     user.mfaBackupCodes.splice(idx, 1);
@@ -412,11 +412,11 @@ export const googleLogin = async ({ idToken, platform }, deviceInfo) => {
     });
     googlePayload = ticket.getPayload();
   } catch {
-    throw new AuthError("Invalid Google token");
+    throw new AuthError("Google sign-in failed. Please try again.", "OAUTH_FAILED");
   }
 
   const { sub: googleId, email, name } = googlePayload;
-  if (!email) throw new AuthError("Google account has no email");
+  if (!email) throw new AuthError("Google sign-in failed. Please try again.", "OAUTH_FAILED");
 
   const lowerEmail = email.toLowerCase();
 
@@ -614,9 +614,9 @@ export const confirmMfaSetup = async (userId, { code }) => {
   if (!redis) throw new AppError("MFA temporarily unavailable", 503, "SERVICE_UNAVAILABLE");
 
   const secret = await redis.getdel(`mfa_setup:${userId}`);
-  if (!secret) throw new AuthError("MFA setup session expired. Please start again.");
+  if (!secret) throw new AuthError("MFA setup session expired. Please start again.", "OTP_EXPIRED");
 
-  if (!verifyTotp(code, secret)) throw new AuthError("Invalid TOTP code");
+  if (!verifyTotp(code, secret)) throw new AuthError("Invalid authenticator code", "OTP_INVALID");
 
   const user = await userRepository.findByIdWithSecrets(userId);
   if (!user) throw new NotFoundError();
@@ -634,10 +634,10 @@ export const confirmMfaSetup = async (userId, { code }) => {
 export const disableMfa = async (userId, { password }) => {
   const user = await userRepository.findByIdWithSecrets(userId);
   if (!user) throw new NotFoundError();
-  if (!user.passwordHash) throw new AuthError("Cannot verify identity for OAuth accounts");
+  if (!user.passwordHash) throw new AuthError("This account uses Google Sign-In. Please sign in with Google instead.", "AUTH_GOOGLE_ACCOUNT_REQUIRED");
 
   if (!(await verifyPassword(password, user.passwordHash))) {
-    throw new AuthError("Incorrect password");
+    throw new AuthError("Current password is incorrect", "AUTH_PASSWORD_INCORRECT");
   }
 
   user.mfaEnabled = false;
