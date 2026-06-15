@@ -34,7 +34,16 @@ export const helmetMiddleware = helmet({
   xssFilter: true,
 });
 
-const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim());
+// Origins always allowed for the admin dashboard regardless of CORS_ORIGIN env var
+const ADMIN_ORIGINS = [
+  "https://admin.getfinchie.com",
+  "http://localhost:5173",
+];
+
+const allowedOrigins = [
+  ...env.CORS_ORIGIN.split(",").map((o) => o.trim()),
+  ...ADMIN_ORIGINS,
+];
 
 export const corsMiddleware = cors({
   origin: (origin, cb) => {
