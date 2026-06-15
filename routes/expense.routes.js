@@ -2,6 +2,7 @@ import express from "express";
 import { expenseController } from "../controllers/expense.controller.js";
 import { authenticate } from "../middleware/authenticate.js";
 import { validate } from "../validators/validate.js";
+import { enforceHistoryLimit } from "../middleware/premium.js";
 import {
   createExpenseSchema,
   updateExpenseSchema,
@@ -12,7 +13,7 @@ const router = express.Router();
 
 router.use(authenticate);
 
-router.get("/", validate(listExpenseSchema, "query"), expenseController.list);
+router.get("/", validate(listExpenseSchema, "query"), enforceHistoryLimit, expenseController.list);
 router.post("/", validate(createExpenseSchema), expenseController.create);
 router.get("/:id", expenseController.getOne);
 router.patch("/:id/approve", expenseController.approve);

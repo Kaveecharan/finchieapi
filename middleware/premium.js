@@ -63,3 +63,32 @@ export const requireFeature = (feature) =>
     }
     next();
   });
+
+// ── enforceHistoryLimit ───────────────────────────────────────────────────────
+// Silently caps startDate to 6 months ago for free users.
+// Does NOT throw — free users still get data, just within the allowed window.
+// Place after validate() so req.query is already parsed, before the controller.
+const FREE_HISTORY_MONTHS = 6;
+
+export const enforceHistoryLimit = asyncHandler(async (req, res, next) => {
+  if (req.subscription === undefined) {
+    const sub    = await Subscription.findOne({ userId: req.user.userId }).lean();
+    req.subscription = sub;
+    req.isPremium    = isPremiumActive(sub);
+  }
+
+  if (!req.isPremium) {
+    // First day of the month that is FREE_HISTORY_MONTHS ago — mirrors the frontend constant.
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - FREE_HISTORY_MONTHS);
+    cutoff.setDate(1);
+    cutoff.setHours(0, 0, 0, 0);
+
+    // Enforce if startDate is absent (would return all history) or older than the cutoff.
+    if (!req.query.startDate || new Date(req.query.startDate) < cutoff) {
+      req.query.startDate = cutoff.toISOString();
+    }
+  }
+
+  next();
+});
