@@ -52,6 +52,10 @@ const schema = z.object({
   CLOUDINARY_API_KEY:    z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
 
+  // ── Admin dashboard ──────────────────────────────────────────────────────────
+  // Used to build the invite link URL sent in staff invitation emails
+  ADMIN_DOMAIN: z.string().default("http://localhost:5173"),
+
   // ── Currency ─────────────────────────────────────────────────────────────────
   CURRENCY_SYMBOL: z.string().default("Rs"),
 });

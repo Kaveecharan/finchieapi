@@ -21,6 +21,7 @@ import chatRoutes               from "./routes/chat.routes.js";
 import subscriptionRoutes       from "./routes/subscription.routes.js";
 import financeScoreRoutes       from "./routes/financeScore.routes.js";
 import adminRoutes               from "./routes/admin.routes.js";
+import staffInviteRoutes         from "./routes/staffInvite.routes.js";
 import { env } from "./config/env.js";
 
 const app = express();
@@ -64,6 +65,7 @@ app.use("/chat",           chatRoutes);
 app.use("/subscriptions",  subscriptionRoutes);
 app.use("/finance-score",  financeScoreRoutes);
 app.use("/admin",          adminRoutes);
+app.use("/staff-invite",   staffInviteRoutes);
 
 app.get("/test", (req, res) => {
   res.json({ success: true, message: "API working properly" });
