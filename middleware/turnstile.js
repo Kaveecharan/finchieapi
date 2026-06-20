@@ -14,14 +14,13 @@ export const verifyTurnstile = async (req, res, next) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        secret: env.TURNSTILE_SECRET_KEY,
+        secret: env.TURNSTILE_SECRET_KEY.trim(),
         response: token,
-        remoteip: req.ip,
       }),
     });
     const data = await resp.json();
     if (!data.success) {
-      console.error("[Turnstile] verification failed, error-codes:", data["error-codes"]);
+      console.error("[Turnstile] siteverify response:", JSON.stringify(data));
       return next(new AppError("CAPTCHA verification failed", 400, "CAPTCHA_FAILED"));
     }
     next();
