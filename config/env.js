@@ -30,11 +30,11 @@ const schema = z.object({
   EMAIL_USER:      z.string().email("EMAIL_USER must be a valid email"),
   EMAIL_PASS:      z.string().optional(),
   BREVO_API_KEY:   z.string().min(1, "BREVO_API_KEY required"),
-  EMAIL_FROM_NAME: z.string().default("Kodeum"),
+  EMAIL_FROM_NAME: z.string().default("Finchie"),
   SUPPORT_EMAIL:   z.string().email().optional(), // falls back to EMAIL_USER if not set
 
-  MFA_ISSUER: z.string().default("Kodeum"),
-  APP_NAME: z.string().default("Kodeum"),
+  MFA_ISSUER: z.string().default("Finchie"),
+  APP_NAME: z.string().default("Finchie"),
 
   OPENAI_API_KEY: z.string().optional(),
 
@@ -61,7 +61,7 @@ const schema = z.object({
   ADMIN_DOMAIN: z.string().default("http://localhost:5173"),
 
   // ── Currency ─────────────────────────────────────────────────────────────────
-  CURRENCY_SYMBOL: z.string().default("Rs"),
+  CURRENCY_SYMBOL: z.string().default("£"),
 });
 
 const result = schema.safeParse(process.env);

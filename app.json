@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "1f9c406c-3c6c-4cee-a14e-6b6c3f8d4bae"
+      }
+    },
+    "android": {
+      "package": "com.kvfinchie.api"
+    }
+  }
+}
