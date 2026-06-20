@@ -5,7 +5,6 @@ import crypto from "crypto";
 import { env } from "../config/env.js";
 import { SECURITY } from "../config/security.js";
 import { sha256, hmacSha256, timingSafeCompare } from "../utils/crypto.js";
-import { env } from "../config/env.js";
 
 authenticator.options = {
   window: SECURITY.TOTP.WINDOW,
