@@ -30,6 +30,10 @@ router.post("/activate", sensitiveLimiter, subscriptionController.activate);
 router.post("/cancel",                    subscriptionController.cancel);
 router.post("/reactivate",                subscriptionController.reactivate);
 
+// Plan change: schedule interval switch at period end; DELETE cancels the pending switch
+router.post("/plan-change",   sensitiveLimiter, subscriptionController.schedulePlanChange);
+router.delete("/plan-change",               subscriptionController.cancelPlanChange);
+
 router.post("/retry-payment",  sensitiveLimiter, subscriptionController.retryPayment);
 router.post("/update-payment/setup",   subscriptionController.setupUpdatePayment);
 router.post(

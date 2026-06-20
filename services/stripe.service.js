@@ -113,6 +113,37 @@ export const stripeService = {
     return pms[0]?.id ?? null;
   },
 
+  // ── Subscription Schedules ────────────────────────────────────────────────
+  // Creates a schedule seeded from an existing subscription. Stripe automatically
+  // sets phase[0] to mirror the current subscription state and end_date = current_period_end.
+  createScheduleFromSubscription: (subscriptionId) =>
+    stripe().subscriptionSchedules.create({ from_subscription: subscriptionId }),
+
+  getSchedule: (scheduleId) =>
+    stripe().subscriptionSchedules.retrieve(scheduleId),
+
+  // Rewrites the schedule phases: phase 1 keeps the current price until the
+  // existing period end; phase 2 starts the new price indefinitely.
+  updateSchedulePhase: (scheduleId, currentPriceId, newPriceId, phase1StartDate, phase1EndDate) =>
+    stripe().subscriptionSchedules.update(scheduleId, {
+      end_behavior: "release",
+      phases: [
+        {
+          start_date: phase1StartDate,
+          end_date:   phase1EndDate,
+          items:      [{ price: currentPriceId, quantity: 1 }],
+        },
+        {
+          items: [{ price: newPriceId, quantity: 1 }],
+        },
+      ],
+    }),
+
+  // Detaches the schedule from the subscription; the subscription continues
+  // as-is with no phase transitions (user cancelled a pending plan change).
+  releaseSchedule: (scheduleId) =>
+    stripe().subscriptionSchedules.release(scheduleId),
+
   // ── Webhook ────────────────────────────────────────────────────────────────
   // Requires raw (unparsed) body — registered before express.json() in app.js.
   constructWebhookEvent: (rawBody, signature) => {

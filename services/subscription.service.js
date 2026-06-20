@@ -53,18 +53,22 @@ const resolveSubscriptionState = (stripeSub) => {
 };
 
 const formatForClient = (sub) => {
-  if (!sub) return { plan: "free", status: "expired", isPremium: false, hadTrial: false, billingInterval: null };
+  if (!sub) return {
+    plan: "free", status: "expired", isPremium: false, hadTrial: false,
+    billingInterval: null, pendingBillingInterval: null,
+  };
   return {
-    plan:               sub.plan,
-    status:             sub.status,
-    isPremium:          isPremiumActive(sub),
-    hadTrial:           !!(sub.trialStart || sub.stripeSubscriptionId),
-    billingInterval:    sub.billingInterval ?? null,
-    trialStart:         sub.trialStart,
-    trialEnd:           sub.trialEnd,
-    currentPeriodStart: sub.currentPeriodStart,
-    currentPeriodEnd:   sub.currentPeriodEnd,
-    cancelAtPeriodEnd:  sub.cancelAtPeriodEnd ?? false,
+    plan:                   sub.plan,
+    status:                 sub.status,
+    isPremium:              isPremiumActive(sub),
+    hadTrial:               !!(sub.trialStart || sub.stripeSubscriptionId),
+    billingInterval:        sub.billingInterval ?? null,
+    pendingBillingInterval: sub.pendingBillingInterval ?? null,
+    trialStart:             sub.trialStart,
+    trialEnd:               sub.trialEnd,
+    currentPeriodStart:     sub.currentPeriodStart,
+    currentPeriodEnd:       sub.currentPeriodEnd,
+    cancelAtPeriodEnd:      sub.cancelAtPeriodEnd ?? false,
   };
 };
 
@@ -267,6 +271,123 @@ export const subscriptionService = {
         }).catch((err) => logger.warn({ event: "email_send_failed", err: err.message }));
       }
     });
+
+    return formatForClient(updated);
+  },
+
+  // POST /subscriptions/plan-change
+  // Schedules a billing-interval switch to take effect at the current period end.
+  // Uses a Stripe Subscription Schedule so the transition is atomic and handled
+  // entirely by Stripe — no cron job or race condition.
+  schedulePlanChange: async (userId, newInterval) => {
+    assertStripeConfigured(newInterval);
+
+    const sub = await Subscription.findOne({ userId });
+
+    if (!sub?.stripeSubscriptionId) {
+      throw new AppError("No active subscription found.", 404, "NOT_FOUND");
+    }
+
+    if (!["active", "trialing"].includes(sub.status)) {
+      throw new AppError(
+        "Plan changes are only available on active subscriptions.",
+        400,
+        "INVALID_STATE"
+      );
+    }
+
+    if (sub.cancelAtPeriodEnd) {
+      throw new AppError(
+        "Cannot change plan while a cancellation is pending. Reactivate your subscription first.",
+        409,
+        "INVALID_STATE"
+      );
+    }
+
+    // No-op guards — current and pending intervals
+    const currentInterval = sub.billingInterval ?? "monthly";
+    if (currentInterval === newInterval && !sub.pendingBillingInterval) {
+      throw new AppError(`You are already on the ${newInterval} plan.`, 409, "ALREADY_ON_PLAN");
+    }
+    if (sub.pendingBillingInterval === newInterval) {
+      throw new AppError(
+        `A switch to ${newInterval} is already scheduled for your next renewal.`,
+        409,
+        "ALREADY_PENDING"
+      );
+    }
+
+    const newPriceId     = PRICE_ID[newInterval]();
+    // currentPriceId: prefer the stored stripePriceId (authoritative), fall back to computed
+    const currentPriceId = sub.stripePriceId || PRICE_ID[currentInterval]();
+
+    let scheduleId = sub.stripeScheduleId;
+    let schedule;
+
+    if (scheduleId) {
+      // Reuse existing schedule — user is changing their pending choice
+      try {
+        schedule = await stripeService.getSchedule(scheduleId);
+      } catch {
+        // Schedule was released/expired in Stripe but DB wasn't cleared — start fresh
+        scheduleId = null;
+      }
+    }
+
+    if (!scheduleId) {
+      schedule = await stripeService.createScheduleFromSubscription(sub.stripeSubscriptionId);
+      scheduleId = schedule.id;
+    }
+
+    // Phase 1: keep current price until the existing period ends.
+    // Phase 2: new price, starts at phase 1 end_date, runs indefinitely.
+    const phase1 = schedule.phases[0];
+    await stripeService.updateSchedulePhase(
+      scheduleId,
+      currentPriceId,
+      newPriceId,
+      phase1.start_date,
+      phase1.end_date
+    );
+
+    const updated = await Subscription.findOneAndUpdate(
+      { userId },
+      { $set: { pendingBillingInterval: newInterval, stripeScheduleId: scheduleId } },
+      { new: true }
+    );
+
+    logger.info({
+      event:      "plan_change_scheduled",
+      userId,
+      from:       currentInterval,
+      to:         newInterval,
+      scheduleId,
+      effectiveDate: new Date(phase1.end_date * 1000).toISOString(),
+    });
+
+    return formatForClient(updated);
+  },
+
+  // DELETE /subscriptions/plan-change
+  // Cancels a previously scheduled billing-interval switch.
+  cancelPlanChange: async (userId) => {
+    assertStripeKeys();
+
+    const sub = await Subscription.findOne({ userId });
+
+    if (!sub?.pendingBillingInterval || !sub.stripeScheduleId) {
+      throw new AppError("No pending plan change to cancel.", 404, "NOT_FOUND");
+    }
+
+    await stripeService.releaseSchedule(sub.stripeScheduleId);
+
+    const updated = await Subscription.findOneAndUpdate(
+      { userId },
+      { $set: { pendingBillingInterval: null, stripeScheduleId: null } },
+      { new: true }
+    );
+
+    logger.info({ event: "plan_change_cancelled", userId });
 
     return formatForClient(updated);
   },
@@ -525,10 +646,30 @@ export const subscriptionService = {
       case "customer.subscription.updated": {
         // resolveSubscriptionState recomputes the full shape from Stripe's object —
         // no field-by-field patching that could leave plan/status out of sync.
-        const state   = resolveSubscriptionState(obj);
+        const state = resolveSubscriptionState(obj);
+
+        // Detect price change caused by a subscription schedule executing its
+        // second phase. When the new price kicks in, sync billingInterval and
+        // clear the pending plan-change state — no extra webhook event needed.
+        const incomingPriceId = obj.items?.data?.[0]?.price?.id;
+        const priceUpdate     = {};
+        if (incomingPriceId) {
+          const monthlyId = env.STRIPE_PRICE_ID_MONTHLY || env.STRIPE_PRICE_ID;
+          const yearlyId  = env.STRIPE_PRICE_ID_YEARLY;
+          if (incomingPriceId === monthlyId) {
+            priceUpdate.billingInterval        = "monthly";
+            priceUpdate.pendingBillingInterval = null;
+            priceUpdate.stripeScheduleId       = null;
+          } else if (yearlyId && incomingPriceId === yearlyId) {
+            priceUpdate.billingInterval        = "yearly";
+            priceUpdate.pendingBillingInterval = null;
+            priceUpdate.stripeScheduleId       = null;
+          }
+        }
+
         const updated = await Subscription.findOneAndUpdate(
           stateGuard(obj.customer),
-          { $set: { ...state, ...stateMeta } }
+          { $set: { ...state, ...priceUpdate, ...stateMeta } }
         );
         if (!updated) logger.info({ event: "stripe_webhook_skipped", eventId, type });
         break;

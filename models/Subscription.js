@@ -52,10 +52,25 @@ const SubscriptionSchema = new Schema(
     trialEnd:   { type: Date },
 
     // ── Billing interval ───────────────────────────────────────────────────
-    // Set at activation, never mutated. Null on legacy records → treat as monthly.
+    // Set at activation; updated when a scheduled plan change executes.
+    // Null on legacy records → treat as monthly.
     billingInterval: {
       type:    String,
       enum:    ["monthly", "yearly"],
+      default: null,
+    },
+
+    // ── Scheduled plan change ──────────────────────────────────────────────
+    // Set when the user schedules a billing-interval switch to take effect at
+    // the current period end. Cleared once the Stripe schedule executes or is
+    // released. stripeScheduleId cross-references the Stripe schedule object.
+    pendingBillingInterval: {
+      type:    String,
+      enum:    ["monthly", "yearly"],
+      default: null,
+    },
+    stripeScheduleId: {
+      type:    String,
       default: null,
     },
 

@@ -64,6 +64,26 @@ export const subscriptionController = {
     res.json({ success: true, data });
   }),
 
+  // POST /subscriptions/plan-change
+  schedulePlanChange: asyncHandler(async (req, res) => {
+    const { interval } = req.body;
+    if (!["monthly", "yearly"].includes(interval)) {
+      return res.status(400).json({
+        success: false,
+        error:   "interval must be 'monthly' or 'yearly'",
+        code:    "VALIDATION_ERROR",
+      });
+    }
+    const data = await subscriptionService.schedulePlanChange(req.user.userId, interval);
+    res.json({ success: true, data });
+  }),
+
+  // DELETE /subscriptions/plan-change
+  cancelPlanChange: asyncHandler(async (req, res) => {
+    const data = await subscriptionService.cancelPlanChange(req.user.userId);
+    res.json({ success: true, data });
+  }),
+
   // POST /subscriptions/cancel
   // Schedules cancellation at end of current billing period
   cancel: asyncHandler(async (req, res) => {
