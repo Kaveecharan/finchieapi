@@ -18,7 +18,8 @@ export const subscriptionController = {
     res.json({
       success: true,
       data: {
-        publishableKey: env.STRIPE_PUBLISHABLE_KEY,
+        publishableKey:   env.STRIPE_PUBLISHABLE_KEY,
+        turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
         plans: {
           monthly: {
             amount:      4.99,

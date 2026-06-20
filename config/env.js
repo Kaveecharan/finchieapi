@@ -39,6 +39,8 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().optional(),
 
   TURNSTILE_SECRET_KEY: z.string().optional(),
+  // Public site key — safe to expose to frontend; served via /subscriptions/config
+  TURNSTILE_SITE_KEY:   z.string().optional(),
 
   // ── Stripe (optional — subscription features disabled when absent) ────────────
   STRIPE_SECRET_KEY:      z.string().optional(),

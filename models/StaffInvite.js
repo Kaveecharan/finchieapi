@@ -24,7 +24,7 @@ const StaffInviteSchema = new mongoose.Schema(
     },
     // SHA-256 hash of the raw token — raw token only exists in the email link
     tokenHash: { type: String, required: true, select: false },
-    expiresAt: { type: Date, required: true, index: true },
+    expiresAt: { type: Date, required: true },
 
     // Set when the invite is accepted
     usedAt:    { type: Date, default: null },
