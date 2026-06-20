@@ -20,7 +20,10 @@ export const verifyTurnstile = async (req, res, next) => {
       }),
     });
     const data = await resp.json();
-    if (!data.success) return next(new AppError("CAPTCHA verification failed", 400, "CAPTCHA_FAILED"));
+    if (!data.success) {
+      console.error("[Turnstile] verification failed, error-codes:", data["error-codes"]);
+      return next(new AppError("CAPTCHA verification failed", 400, "CAPTCHA_FAILED"));
+    }
     next();
   } catch {
     next(new AppError("CAPTCHA service unavailable", 503, "CAPTCHA_UNAVAILABLE"));
