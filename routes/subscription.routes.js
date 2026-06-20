@@ -10,12 +10,14 @@ const router = Router();
 // ── Webhook — no authenticate, raw body already applied in app.js ─────────────
 router.post("/webhook", subscriptionController.webhook);
 
+// ── Public routes (no auth required) ─────────────────────────────────────────
+// publishableKey and plan info are public by design — no user data exposed.
+router.get("/config", subscriptionController.getConfig);
+
 // ── Authenticated routes ───────────────────────────────────────────────────────
 // authUserLimiter: per-user cap (20 req/15 min) so one account can't flood the
 // subscription API even after passing authentication.
 router.use(authenticate, authUserLimiter);
-
-router.get("/config", subscriptionController.getConfig);
 
 router.get("/me",             subscriptionController.getMySubscription);
 router.get("/payment-method", subscriptionController.getPaymentMethod);
