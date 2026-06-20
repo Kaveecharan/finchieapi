@@ -13,7 +13,10 @@ export const updateProfileSchema = z.object({
 });
 
 export const updateAvatarSchema = z.object({
-  avatarUrl: z.string().url("Invalid URL"),
+  avatarUrl: z
+    .string()
+    .url("Invalid URL")
+    .startsWith("https://res.cloudinary.com/dxmuchwgf/", "Avatar must be a Cloudinary URL"),
   publicId:  z.string().min(1),
 });
 

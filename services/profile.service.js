@@ -2,7 +2,6 @@ import User from "../models/User.js";
 import { userRepository } from "../repositories/user.repository.js";
 import { sessionRepository } from "../repositories/session.repository.js";
 import { verifyPassword } from "../security/password.js";
-import { pepperPassword } from "../utils/crypto.js";
 import { AppError, ConflictError, ValidationError } from "../errors/AppError.js";
 
 const SIX_MONTHS_MS = 6 * 30 * 24 * 60 * 60 * 1000;
@@ -62,8 +61,7 @@ export const profileService = {
 
     // Verify password
     if (!user.passwordHash) throw new ValidationError("Cannot change email on OAuth-only accounts");
-    const pepperedPassword = pepperPassword(password);
-    const valid = await verifyPassword(pepperedPassword, user.passwordHash);
+    const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) throw new AppError(401, "Incorrect password", "INVALID_CREDENTIALS");
 
     // Check email not already in use
@@ -111,8 +109,7 @@ export const profileService = {
     // Password-auth users must supply and pass the password check.
     if (user.passwordHash) {
       if (!password) throw new AppError(400, "Password required", "VALIDATION_ERROR");
-      const pepperedPassword = pepperPassword(password);
-      const valid = await verifyPassword(pepperedPassword, user.passwordHash);
+      const valid = await verifyPassword(password, user.passwordHash);
       if (!valid) throw new AppError(401, "Incorrect password", "INVALID_CREDENTIALS");
     }
 

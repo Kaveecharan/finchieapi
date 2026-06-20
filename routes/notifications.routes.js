@@ -16,6 +16,9 @@ router.post(
     if (!token || typeof token !== "string") {
       return res.status(400).json({ error: "token is required" });
     }
+    if (!/^ExponentPushToken\[.+\]$/.test(token)) {
+      return res.status(400).json({ error: "Invalid push token format" });
+    }
 
     // Pipeline update: deduplicate with $setUnion then cap at 5 most-recent tokens.
     // Atomic — no separate trim step needed. Prevents unbounded document growth.

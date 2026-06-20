@@ -367,12 +367,21 @@ export const verifyMfaLogin = async ({ mfaToken, code, backupCode }, deviceInfo)
         auditLog(AUDIT.MFA_FAILED, { userId: user.userId, ip: deviceInfo.ip, reason: "totp_replay" });
         throw new AuthError("TOTP code already used. Wait for the next code.", "OTP_INVALID");
       }
-      // Mark before verifying — prevents a race where two concurrent requests both pass
+      // Mark before verifying to prevent race-condition replay (two concurrent requests with same code).
+      // On unexpected verifyTotp throw, delete the key so the user can retry.
       await redis.setex(replayKey, 90, "1");
     }
-    if (!verifyTotp(code, user.mfaSecret)) {
-      auditLog(AUDIT.MFA_FAILED, { userId: user.userId, ip: deviceInfo.ip });
-      throw new AuthError("Invalid authenticator code", "OTP_INVALID");
+    try {
+      if (!verifyTotp(code, user.mfaSecret)) {
+        auditLog(AUDIT.MFA_FAILED, { userId: user.userId, ip: deviceInfo.ip });
+        throw new AuthError("Invalid authenticator code", "OTP_INVALID");
+      }
+    } catch (err) {
+      if (err.code === "OTP_INVALID") throw err;
+      // Unexpected error (e.g. corrupted mfaSecret) — release the replay key so user can retry
+      const redis2 = getRedis();
+      if (redis2) await redis2.del(`totp_used:${user.userId}:${code}`);
+      throw err;
     }
   } else if (backupCode) {
     const idx = findBackupCode(backupCode, user.mfaBackupCodes);
@@ -498,15 +507,9 @@ export const sendPasswordReset = async (email, ip) => {
   const lowerEmail = email.toLowerCase().trim();
   const user = await userRepository.findByEmailWithSecrets(lowerEmail);
 
-  if (!user || !user.isEmailVerified) {
-    throw new AuthError("No account found with this email address.", "ACCOUNT_NOT_FOUND");
-  }
-
-  if (user.oauthOnly) {
-    throw new AuthError(
-      "This email is registered with Google Sign-In. Please tap 'Sign in with Google' instead.",
-      "AUTH_GOOGLE_ACCOUNT_REQUIRED"
-    );
+  // Enumeration-safe: silently succeed for unknown, unverified, or OAuth-only accounts
+  if (!user || !user.isEmailVerified || user.oauthOnly) {
+    return;
   }
 
   const code = generateCode(6);

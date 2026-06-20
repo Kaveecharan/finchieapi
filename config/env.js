@@ -43,8 +43,12 @@ const schema = z.object({
   // ── Stripe (optional — subscription features disabled when absent) ────────────
   STRIPE_SECRET_KEY:      z.string().optional(),
   STRIPE_WEBHOOK_SECRET:  z.string().optional(),
-  // The recurring price ID for the £3.99/month premium plan (create in Stripe dashboard)
+  // Legacy single price ID — kept as fallback for STRIPE_PRICE_ID_MONTHLY
   STRIPE_PRICE_ID:        z.string().optional(),
+  // £4.99/month recurring (create in Stripe dashboard). Falls back to STRIPE_PRICE_ID.
+  STRIPE_PRICE_ID_MONTHLY: z.string().optional(),
+  // £34.99/year recurring (create in Stripe dashboard). Required for yearly subscriptions.
+  STRIPE_PRICE_ID_YEARLY:  z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 
   // ── Cloudinary ───────────────────────────────────────────────────────────────

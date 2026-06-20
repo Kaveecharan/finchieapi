@@ -52,6 +52,9 @@ export const adminController = {
       if (!Array.isArray(roles) || roles.some((r) => !validRoles.includes(r))) {
         throw new AppError(`Invalid roles. Must be subset of: ${validRoles.join(", ")}`, 400, "INVALID_ROLES");
       }
+      if (roles.includes("superAdmin") && !req.user.roles?.includes("superAdmin")) {
+        throw new AppError("Only superAdmins can assign the superAdmin role", 403, "FORBIDDEN");
+      }
     }
 
     const user = await adminRepository.updateUser(userId, { status, roles });

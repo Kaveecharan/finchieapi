@@ -63,7 +63,6 @@ export const verifyMfaLogin = asyncHandler(async (req, res) => {
 
 export const googleLogin = asyncHandler(async (req, res) => {
   const { id_token, platform } = req.body;
-  console.log('[googleLogin] called — platform:', platform, 'id_token present:', !!id_token, 'user:', req.user?.userId ?? 'none');
   const result = await authService.googleLogin({ idToken: id_token, platform }, deviceInfo(req));
   sendTokens(res, req, result);
 });

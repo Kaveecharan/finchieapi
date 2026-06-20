@@ -51,6 +51,14 @@ const SubscriptionSchema = new Schema(
     trialStart: { type: Date },
     trialEnd:   { type: Date },
 
+    // ── Billing interval ───────────────────────────────────────────────────
+    // Set at activation, never mutated. Null on legacy records → treat as monthly.
+    billingInterval: {
+      type:    String,
+      enum:    ["monthly", "yearly"],
+      default: null,
+    },
+
     // ── Billing period ─────────────────────────────────────────────────────
     currentPeriodStart: { type: Date },
     currentPeriodEnd:   { type: Date },

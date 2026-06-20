@@ -13,19 +13,27 @@ export const subscriptionController = {
   }),
 
   // GET /subscriptions/config
-  // Returns Stripe publishable key + plan pricing (safe to expose publicly after auth)
+  // Returns Stripe publishable key + all available plan options.
   getConfig: asyncHandler(async (req, res) => {
     res.json({
       success: true,
       data: {
         publishableKey: env.STRIPE_PUBLISHABLE_KEY,
-        plan: {
-          name:        "Finchie Premium",
-          price:       3.99,
-          currency:    "gbp",
-          interval:    "month",
-          trialDays:   30,
-          description: "30-day free trial, then £3.99/month. Cancel anytime.",
+        plans: {
+          monthly: {
+            amount:      4.99,
+            currency:    "gbp",
+            interval:    "month",
+            trialDays:   30,
+            description: "30-day free trial, then £4.99/month. Cancel anytime.",
+          },
+          yearly: {
+            amount:      34.99,
+            currency:    "gbp",
+            interval:    "year",
+            trialDays:   0,
+            description: "£34.99/year. No free trial. Cancel anytime.",
+          },
         },
       },
     });
@@ -39,11 +47,20 @@ export const subscriptionController = {
   }),
 
   // POST /subscriptions/activate
-  // Creates the Stripe subscription (with 30-day trial) after Payment Sheet confirms.
-  // Expects { paymentMethodId } in the body — the PM ID from the confirmed SetupIntent.
+  // Creates the Stripe subscription after Payment Sheet confirms.
+  // Expects { paymentMethodId, interval } — interval is 'monthly' | 'yearly'.
   activate: asyncHandler(async (req, res) => {
-    const { paymentMethodId } = req.body;
-    const data = await subscriptionService.activate(req.user.userId, paymentMethodId);
+    const { paymentMethodId, interval } = req.body;
+
+    if (!["monthly", "yearly"].includes(interval)) {
+      return res.status(400).json({
+        success: false,
+        error: "interval must be 'monthly' or 'yearly'",
+        code:  "VALIDATION_ERROR",
+      });
+    }
+
+    const data = await subscriptionService.activate(req.user.userId, paymentMethodId, interval);
     res.json({ success: true, data });
   }),
 

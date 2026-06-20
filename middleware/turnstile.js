@@ -5,7 +5,6 @@ const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverif
 
 export const verifyTurnstile = async (req, res, next) => {
   if (!env.TURNSTILE_SECRET_KEY) return next();
-  if (env.NODE_ENV !== "production") return next();
 
   const token = req.body?.cfToken;
   if (!token) return next(new AppError("CAPTCHA token missing", 400, "CAPTCHA_REQUIRED"));

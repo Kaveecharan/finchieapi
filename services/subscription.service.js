@@ -53,15 +53,13 @@ const resolveSubscriptionState = (stripeSub) => {
 };
 
 const formatForClient = (sub) => {
-  if (!sub) return { plan: "free", status: "expired", isPremium: false, hadTrial: false };
+  if (!sub) return { plan: "free", status: "expired", isPremium: false, hadTrial: false, billingInterval: null };
   return {
     plan:               sub.plan,
     status:             sub.status,
     isPremium:          isPremiumActive(sub),
-    // True if the user ever went through the subscription flow.
-    // stripeSubscriptionId is the authoritative signal — trialStart alone can be
-    // null for older records. New users have neither field set.
     hadTrial:           !!(sub.trialStart || sub.stripeSubscriptionId),
+    billingInterval:    sub.billingInterval ?? null,
     trialStart:         sub.trialStart,
     trialEnd:           sub.trialEnd,
     currentPeriodStart: sub.currentPeriodStart,
@@ -70,10 +68,31 @@ const formatForClient = (sub) => {
   };
 };
 
-const assertStripeConfigured = () => {
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_PRICE_ID) {
+// Effective price IDs — monthly falls back to legacy STRIPE_PRICE_ID
+const PRICE_ID = {
+  monthly: () => env.STRIPE_PRICE_ID_MONTHLY || env.STRIPE_PRICE_ID,
+  yearly:  () => env.STRIPE_PRICE_ID_YEARLY,
+};
+
+const PLAN_AMOUNT = { monthly: 4.99, yearly: 34.99 };
+
+// Used by all non-activation methods — only verifies Stripe credentials are present.
+const assertStripeKeys = () => {
+  if (!env.STRIPE_SECRET_KEY) {
     throw new AppError(
       "Subscription service is not available. Stripe is not configured.",
+      503,
+      "STRIPE_NOT_CONFIGURED"
+    );
+  }
+};
+
+// Used only by activate() — also verifies the price ID exists for the chosen interval.
+const assertStripeConfigured = (interval) => {
+  assertStripeKeys();
+  if (!PRICE_ID[interval]?.()) {
+    throw new AppError(
+      `No Stripe price configured for ${interval} billing. Add STRIPE_PRICE_ID_${interval.toUpperCase()} to env.`,
       503,
       "STRIPE_NOT_CONFIGURED"
     );
@@ -94,7 +113,7 @@ export const subscriptionService = {
   // Returns client_secret for the mobile Stripe Payment Sheet.
   // NOTE: accepts userId (string) not req.user — req.user only carries JWT claims.
   setup: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
 
     // Fetch full user to get email / display name for the Stripe customer record
     const user = await User.findOne({ userId }, {
@@ -159,10 +178,10 @@ export const subscriptionService = {
 
   // POST /subscriptions/activate
   // Called after the Stripe Payment Sheet confirms the card.
-  // paymentMethodId: the PaymentMethod ID from the confirmed SetupIntent —
-  //   must be passed so Stripe knows which card to charge at trial end or immediately.
-  activate: async (userId, paymentMethodId) => {
-    assertStripeConfigured();
+  // paymentMethodId: the PaymentMethod ID from the confirmed SetupIntent.
+  // interval: 'monthly' | 'yearly' — determines price and trial eligibility.
+  activate: async (userId, paymentMethodId, interval = "monthly") => {
+    assertStripeConfigured(interval);
 
     const sub = await Subscription.findOne({ userId });
 
@@ -190,40 +209,43 @@ export const subscriptionService = {
 
     // Attach the confirmed PaymentMethod as the customer's default so that
     // Stripe uses it for all future invoices (trial end, renewals, retry).
-    // This is the critical step the prior implementation was missing.
     if (paymentMethodId) {
       await stripeService.updateDefaultPaymentMethod(sub.stripeCustomerId, null, paymentMethodId);
     }
 
-    // Deterministic idempotency key (daily window) — if two requests race,
-    // Stripe returns the same subscription object for both, preventing a
-    // duplicate Stripe subscription being created for the same user.
-    const idempotencyKey = `finchie-activate-${userId}-${new Date().toISOString().slice(0, 10)}`;
+    // Deterministic idempotency key scoped by interval so monthly and yearly
+    // activations on the same day produce distinct Stripe subscriptions.
+    const idempotencyKey = `finchie-activate-${userId}-${interval}-${new Date().toISOString().slice(0, 10)}`;
 
-    // No trial for returning users. Check both trialStart and stripeSubscriptionId —
-    // trialStart can be null on older records even when a subscription existed.
-    const trialDays = (sub.trialStart || sub.stripeSubscriptionId) ? 0 : 30;
+    const priceId = PRICE_ID[interval]();
+
+    // Trial logic:
+    //   Monthly — 30 days on first-ever subscription; 0 for returning users.
+    //   Yearly  — NEVER a trial, regardless of history. Backend enforces this
+    //             unconditionally so the client cannot bypass it.
+    const isFirstSubscription = !(sub.trialStart || sub.stripeSubscriptionId);
+    const trialDays = (interval === "monthly" && isFirstSubscription) ? 30 : 0;
 
     const stripeSub = await stripeService.createSubscription(
       sub.stripeCustomerId,
-      env.STRIPE_PRICE_ID,
+      priceId,
       trialDays,
-      paymentMethodId,   // explicitly set on subscription — Stripe charges this card
+      paymentMethodId,
       idempotencyKey
     );
 
     const activateFields = {
       stripeSubscriptionId: stripeSub.id,
-      stripePriceId:        env.STRIPE_PRICE_ID,
+      stripePriceId:        priceId,
+      billingInterval:      interval,
       plan:                 "premium",
       status:               normaliseStatus(stripeSub.status),
       currentPeriodStart:   fromStripeTimestamp(stripeSub.current_period_start),
       currentPeriodEnd:     fromStripeTimestamp(stripeSub.current_period_end),
       cancelAtPeriodEnd:    false,
     };
-    // Preserve historical trial dates — only write when Stripe reports them so
-    // a no-trial re-subscription never clears the stored trialStart that guards
-    // against issuing a second free trial.
+    // Only write trial dates when Stripe reports them — preserves historical
+    // trialStart so a no-trial re-subscription never clears the guard value.
     if (stripeSub.trial_start) activateFields.trialStart = fromStripeTimestamp(stripeSub.trial_start);
     if (stripeSub.trial_end)   activateFields.trialEnd   = fromStripeTimestamp(stripeSub.trial_end);
 
@@ -233,14 +255,14 @@ export const subscriptionService = {
       { new: true }
     );
 
-    logger.info({ event: "subscription_activated", userId, stripeSubId: stripeSub.id });
+    logger.info({ event: "subscription_activated", userId, stripeSubId: stripeSub.id, interval });
 
     // Fire-and-forget: send welcome email
     User.findOne({ userId }, { email: 1, firstName: 1 }).lean().then((user) => {
       if (user) {
         sendSubscriptionActivatedEmail(user.email, user.firstName, {
           trialEnd: updated.trialEnd,
-          amount:   3.99,
+          amount:   PLAN_AMOUNT[interval],
           currency: "gbp",
         }).catch((err) => logger.warn({ event: "email_send_failed", err: err.message }));
       }
@@ -251,7 +273,7 @@ export const subscriptionService = {
 
   // POST /subscriptions/cancel
   cancel: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
 
     const sub = await Subscription.findOne({ userId });
 
@@ -286,7 +308,7 @@ export const subscriptionService = {
 
   // POST /subscriptions/reactivate
   reactivate: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
 
     const sub = await Subscription.findOne({ userId });
 
@@ -311,7 +333,7 @@ export const subscriptionService = {
 
   // GET /subscriptions/payment-method
   getPaymentMethod: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
     const sub = await Subscription.findOne({ userId }).lean();
     if (!sub?.stripeSubscriptionId) return null;
     const pm = await stripeService.getSubscriptionPaymentMethod(sub.stripeSubscriptionId);
@@ -326,7 +348,7 @@ export const subscriptionService = {
 
   // GET /subscriptions/billing-history
   getBillingHistory: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
     const sub = await Subscription.findOne({ userId }).lean();
     if (!sub?.stripeCustomerId) return [];
     const { data: invoices } = await stripeService.listInvoices(sub.stripeCustomerId, 24);
@@ -348,7 +370,7 @@ export const subscriptionService = {
   // Attempts to pay the open invoice with the card already on file.
   // Only valid when status === "past_due".
   retryPayment: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
 
     const sub = await Subscription.findOne({ userId }).lean();
     if (!sub?.stripeCustomerId) throw new AppError("No subscription found.", 404, "NOT_FOUND");
@@ -419,7 +441,7 @@ export const subscriptionService = {
 
   // POST /subscriptions/update-payment/setup
   setupUpdatePayment: async (userId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
     const sub = await Subscription.findOne({ userId }).lean();
     if (!sub?.stripeCustomerId) {
       throw new AppError("No payment setup found. Complete initial subscription setup first.", 404, "NOT_FOUND");
@@ -433,7 +455,7 @@ export const subscriptionService = {
 
   // POST /subscriptions/update-payment/confirm
   confirmUpdatePayment: async (userId, paymentMethodId) => {
-    assertStripeConfigured();
+    assertStripeKeys();
     if (!paymentMethodId) throw new AppError("paymentMethodId is required.", 400, "VALIDATION_ERROR");
 
     const sub = await Subscription.findOne({ userId }).lean();

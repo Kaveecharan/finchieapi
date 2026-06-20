@@ -4,7 +4,8 @@ import QRCode from "qrcode";
 import crypto from "crypto";
 import { env } from "../config/env.js";
 import { SECURITY } from "../config/security.js";
-import { sha256, timingSafeCompare } from "../utils/crypto.js";
+import { sha256, hmacSha256, timingSafeCompare } from "../utils/crypto.js";
+import { env } from "../config/env.js";
 
 authenticator.options = {
   window: SECURITY.TOTP.WINDOW,
@@ -36,9 +37,10 @@ export const generateBackupCodes = () =>
     return `${raw.slice(0, 5)}-${raw.slice(5)}`;
   });
 
-// Normalize before hashing — case/dash insensitive on input
+// Normalize before hashing — case/dash insensitive on input.
+// HMAC-keyed with BCRYPT_PEPPER to prevent rainbow tables on the 40-bit code space.
 export const hashBackupCode = (code) =>
-  sha256(code.replace(/-/g, "").toUpperCase());
+  hmacSha256(code.replace(/-/g, "").toUpperCase(), env.BCRYPT_PEPPER);
 
 /**
  * Checks if the presented backup code matches any stored hash.

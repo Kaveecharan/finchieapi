@@ -67,10 +67,6 @@ app.use("/finance-score",  financeScoreRoutes);
 app.use("/admin",          adminRoutes);
 app.use("/staff-invite",   staffInviteRoutes);
 
-app.get("/test", (req, res) => {
-  res.json({ success: true, message: "API working properly" });
-});
-
 // ─── 404 — catch all unmatched routes and return JSON (never HTML) ────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found", code: "NOT_FOUND", requestId: req.requestId });

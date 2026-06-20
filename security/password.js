@@ -1,4 +1,4 @@
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { SECURITY } from "../config/security.js";
 import { pepperPassword, timingSafeCompare } from "../utils/crypto.js";
 

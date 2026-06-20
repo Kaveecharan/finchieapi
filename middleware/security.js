@@ -48,8 +48,7 @@ const allowedOrigins = [
 export const corsMiddleware = cors({
   origin: (origin, cb) => {
     // Allow requests with no origin header (native mobile, curl, same-origin).
-    // Also allow the literal string "null" sent by sandboxed WebViews / file:// origins.
-    if (!origin || origin === "null" || allowedOrigins.includes(origin)) return cb(null, true);
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     // Reject without passing an Error — passing Error causes Express to emit 500.
     // Omitting the CORS headers is enough: browsers block, curl proceeds (API-only risk).
     cb(null, false);
