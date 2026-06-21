@@ -8,6 +8,7 @@ export const verifyTurnstile = async (req, res, next) => {
 
   const token = req.body?.cfToken;
   if (!token) return next(new AppError("CAPTCHA token missing", 400, "CAPTCHA_REQUIRED"));
+  console.log("[Turnstile] verifying token:", token.substring(0, 30), "len:", token.length);
 
   try {
     const resp = await fetch(SITEVERIFY_URL, {
