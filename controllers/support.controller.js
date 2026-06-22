@@ -25,4 +25,23 @@ export const supportController = {
       messages: [{ from: "user", content: message }],
     }).catch((err) => logger.warn({ event: "support_ticket_save_failed", err: err.message }));
   },
+
+  webContact: async (req, res) => {
+    const { name, email, subject, message } = req.body;
+
+    try {
+      await sendSupportEmail(email, `[Web] ${subject}`, `From: ${name}\n\n${message}`, null);
+      logger.info({ event: "web_contact_sent", email, subject });
+      res.json({ success: true, message: "Your message has been sent." });
+    } catch (err) {
+      logger.error({ event: "web_contact_failed", email, err: err.message });
+      throw new AppError(500, "Failed to send your message. Please try again.", "EMAIL_SEND_FAILED");
+    }
+
+    SupportTicket.create({
+      email,
+      subject: `[Web] ${subject}`,
+      messages: [{ from: "user", content: `From: ${name}\n\n${message}` }],
+    }).catch((err) => logger.warn({ event: "web_ticket_save_failed", err: err.message }));
+  },
 };

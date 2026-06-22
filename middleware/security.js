@@ -40,9 +40,19 @@ const ADMIN_ORIGINS = [
   "http://localhost:5173",
 ];
 
+// Marketing website origins
+const WEB_ORIGINS = [
+  "https://finchie.app",
+  "https://www.finchie.app",
+  "https://getfinchie.com",
+  "https://www.getfinchie.com",
+  "http://localhost:3000",
+];
+
 const allowedOrigins = [
   ...env.CORS_ORIGIN.split(",").map((o) => o.trim()),
   ...ADMIN_ORIGINS,
+  ...WEB_ORIGINS,
 ];
 
 export const corsMiddleware = cors({
