@@ -101,12 +101,16 @@ export const buildIncomeFilter = (userId, params = {}) => {
   return filter;
 };
 
-// Returns the sort object for common sort options
-export const buildSort = (sortField = "date", sortOrder = "desc") => {
+// Returns the sort object for common sort options.
+// Default is createdAt desc so the most recently added entry always appears first.
+// For non-createdAt primary sorts, createdAt: -1 is added as a tiebreaker.
+export const buildSort = (sortField = "createdAt", sortOrder = "desc") => {
   const direction = sortOrder === "asc" ? 1 : -1;
-  const allowed = ["date", "amount", "itemName", "type", "whose"];
-  const field = allowed.includes(sortField) ? sortField : "date";
-  return { [field]: direction };
+  const allowed = ["date", "amount", "itemName", "type", "whose", "createdAt"];
+  const field = allowed.includes(sortField) ? sortField : "createdAt";
+  const sort = { [field]: direction };
+  if (field !== "createdAt") sort.createdAt = -1;
+  return sort;
 };
 
 // Builds a date range for a given ISO month string (e.g. "2025-05")
