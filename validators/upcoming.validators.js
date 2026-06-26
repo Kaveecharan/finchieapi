@@ -25,7 +25,8 @@ const futureDate = z
 
 const expenseFields = z.object({
   transactionType: z.literal("expense"),
-  itemName: z.string().min(1, "Item name required").max(200).trim(),
+  category:    categoryRef,
+  itemName:    z.string().min(1, "Item name required").max(200).trim(),
   subCategory: categoryRef.nullable().optional(),
 });
 
@@ -36,11 +37,10 @@ const incomeFields = z.object({
 });
 
 const commonFields = z.object({
-  amount:   z.number().positive("Amount must be positive").max(999_999_999),
-  date:     futureDate,
-  category: categoryRef,
-  note:     z.string().max(500).trim().optional().default(""),
-  images:   z.array(imageRef).max(2).optional().default([]),
+  amount: z.number().positive("Amount must be positive").max(999_999_999),
+  date:   futureDate,
+  note:   z.string().max(500).trim().optional().default(""),
+  images: z.array(imageRef).max(2).optional().default([]),
 });
 
 export const createUpcomingSchema = z.discriminatedUnion("transactionType", [
@@ -51,10 +51,10 @@ export const createUpcomingSchema = z.discriminatedUnion("transactionType", [
 export const updateUpcomingSchema = z.object({
   amount:      z.number().positive().max(999_999_999).optional(),
   date:        futureDate.optional(),
-  category:    categoryRef.optional(),
   note:        z.string().max(500).trim().optional(),
   images:      z.array(imageRef).max(2).optional(),
   // Expense-only
+  category:    categoryRef.optional(),
   itemName:    z.string().min(1).max(200).trim().optional(),
   subCategory: categoryRef.nullable().optional(),
   // Income-only

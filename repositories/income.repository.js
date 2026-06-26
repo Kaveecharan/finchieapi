@@ -29,7 +29,7 @@ export const incomeRepository = {
       { $match: { userId, ...ACTIVE, date: { $gte: start, $lte: end } } },
       {
         $group: {
-          _id: { type: "$type", category: "$category.name" },
+          _id: "$type",
           total: { $sum: "$amount" },
           count: { $sum: 1 },
           whose: { $addToSet: "$whose" },

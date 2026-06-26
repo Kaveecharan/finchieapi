@@ -30,7 +30,7 @@ const upcomingSchema = new mongoose.Schema(
     // Common
     amount: { type: Number, required: true, min: 0.01 },
     date:   { type: Date, required: true },
-    category: { type: categoryRefSchema, required: true },
+    category: { type: categoryRefSchema, required: false, default: null },
     note:   { type: String, trim: true, maxlength: 500, default: "" },
     images: {
       type: [imageSchema],

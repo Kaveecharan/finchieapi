@@ -66,8 +66,7 @@ export const analyticsService = {
           category: r.category,
         })),
         incomeByType: incomeByType.map((r) => ({
-          type: r._id.type,
-          category: r._id.category,
+          type: r._id,
           total: r.total,
           count: r.count,
           sources: r.whose.filter(Boolean),
