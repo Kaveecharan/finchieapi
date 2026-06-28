@@ -14,7 +14,8 @@ router.patch("/users/:userId",                adminController.updateUser);
 router.get("/subscriptions",                  adminController.listSubscriptions);
 router.get("/ai-usage",                       adminController.getAiUsage);
 router.get("/support/tickets",                adminController.listTickets);
-router.get("/support/tickets/:ticketId",      adminController.getTicket);
-router.patch("/support/tickets/:ticketId",    adminController.updateTicket);
+router.get("/support/tickets/:ticketId",          adminController.getTicket);
+router.patch("/support/tickets/:ticketId",        adminController.updateTicket);
+router.post("/finance-score/calculate/:userId",   adminController.calculateScore);
 
 export default router;

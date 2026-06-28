@@ -18,4 +18,14 @@ export const financeScoreController = {
       next(err);
     }
   },
+
+  // POST /finance-score/calculate — premium users can manually trigger recalculation
+  calculate: async (req, res, next) => {
+    try {
+      const result = await financeScoreService.calculateForUser(req.user.userId, { force: true });
+      res.json({ success: true, data: result });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

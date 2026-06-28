@@ -8,7 +8,8 @@ const router = express.Router();
 router.use(authenticate);
 router.use(requireFeature("finance_score"));
 
-router.get("/current", financeScoreController.getCurrent);
-router.get("/history", financeScoreController.getHistory);
+router.get("/current",    financeScoreController.getCurrent);
+router.get("/history",    financeScoreController.getHistory);
+router.post("/calculate", financeScoreController.calculate);
 
 export default router;

@@ -1,6 +1,7 @@
 import { adminRepository } from "../repositories/admin.repository.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { AppError, NotFoundError } from "../errors/AppError.js";
+import { financeScoreService } from "../services/financeScore.service.js";
 
 export const adminController = {
   // GET /admin/overview
@@ -114,5 +115,12 @@ export const adminController = {
     });
     if (!ticket) throw new NotFoundError("Ticket not found");
     res.json({ success: true, data: ticket });
+  }),
+
+  // POST /admin/finance-score/calculate/:userId
+  calculateScore: asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const result = await financeScoreService.calculateForUser(userId, { force: true });
+    res.json({ success: true, data: result });
   }),
 };
