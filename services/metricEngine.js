@@ -422,6 +422,41 @@ export const metricEngine = {
       ctx.savingsRate = pct(inc - exp, inc);
     }
 
+    // Safety net: if the asked period was actually queried but came back empty
+    // (no income and no expenses), attach the all-time picture so the assistant
+    // can give a useful, non-contradictory answer instead of a bare "0". Skipped
+    // when the period is already all-time, or when balance metrics are present.
+    const hasExp   = ctx.totalExpenses !== undefined;
+    const hasInc   = ctx.totalIncome   !== undefined;
+    const expZero  = !hasExp || (ctx.totalExpenses.total ?? 0) === 0;
+    const incZero  = !hasInc || (ctx.totalIncome.total   ?? 0) === 0;
+    const periodIsEmpty =
+      period &&
+      period.label !== "All time" &&
+      (hasExp || hasInc) &&        // at least one total was genuinely requested
+      expZero && incZero &&
+      ctx.netBalance === undefined &&
+      ctx.availableBalance === undefined &&
+      ctx.lifetime === undefined;
+
+    // Same safety net for comparison queries: if BOTH compared periods have no
+    // activity, attach the all-time picture so the reply still has something
+    // concrete to stand on instead of reporting two empty columns.
+    let comparisonIsEmpty = false;
+    if (ctx.comparison && ctx.lifetime === undefined) {
+      const sideEmpty = (p) =>
+        ((p?.expenses ?? 0) === 0) && ((p?.income ?? 0) === 0) && ((p?.savings ?? 0) === 0);
+      comparisonIsEmpty = sideEmpty(ctx.comparison.period1) && sideEmpty(ctx.comparison.period2);
+    }
+
+    if (periodIsEmpty || comparisonIsEmpty) {
+      const lifetime = await M.netBalance(userId);
+      // Only attach when there's real lifetime history to pivot to.
+      if ((lifetime.allTimeIncome ?? 0) !== 0 || (lifetime.allTimeExpenses ?? 0) !== 0) {
+        ctx.lifetime = lifetime;
+      }
+    }
+
     return ctx;
   },
 };

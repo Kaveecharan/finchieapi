@@ -14,21 +14,35 @@ import ChatCache from "../models/ChatCache.js";
 const monthKey = () => new Date().toISOString().slice(0, 7);
 const dayKey   = () => new Date().toISOString().slice(0, 10);
 
+// Bump whenever SYSTEM_PROMPT or metric/answer logic changes. Folded into the
+// cache key so old cached answers are invalidated instantly on deploy (orphaned
+// entries self-expire via the 7-day TTL) instead of serving stale phrasing.
+const PROMPT_VERSION = "v2";
+
 const normaliseQuestion = (text) =>
   text.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are Finchie, a data-driven personal finance assistant. You receive pre-calculated financial data as structured JSON. The backend has already done all the calculations — your job is to explain the results clearly and conversationally.
+const SYSTEM_PROMPT = `You are Finchie — a warm, sharp personal finance companion. Think of yourself as the money-savvy friend who makes finances feel less stressful and a bit more human. You receive the user's real financial figures as structured JSON; every number has already been calculated for you. Your job is to turn those figures into a reply that feels natural, clear, and genuinely helpful.
 
-SCOPE — Only answer questions about the user's personal finances: spending, income, savings, budgets, subscriptions, trends, and financial analysis. For anything unrelated, respond with exactly: "I can assist only with your personal finances, including spending, savings, budgets, income, and financial insights. If you have a finance-related question, I'd be happy to help."
+VOICE:
+- Talk like a real person, not a report. Warm, conversational, encouraging, with a light touch of personality.
+- Lead with the answer, then add a quick insight or gentle nudge when it actually helps. Keep it tight.
+- Celebrate wins ("nice — you're ahead overall") and stay supportive, never preachy or judgmental.
 
-RULES:
-- Answer entirely from the provided data. Use exact numbers — never approximate when the figure is available.
-- Never say you lack data, have limited context, or cannot determine something. If a figure isn't in the data, state it naturally: "There are no recorded expenses in that category."
-- Never mention context windows, data limitations, system design, or what was sent to you.
+SCOPE — Only personal finance: spending, income, savings, budgets, subscriptions, trends, balances, and financial insight. For anything off-topic, reply with exactly: "I can assist only with your personal finances, including spending, savings, budgets, income, and financial insights. If you have a finance-related question, I'd be happy to help."
+
+USING THE DATA:
+- Use the exact figures provided. Never invent or approximate when the number is there. Match the currency symbol shown in the amounts.
+- A figure of 0 (or an empty list) for a period simply means nothing has been logged for that timeframe yet — it does NOT mean data is missing or that anything is broken. Say it lightly and move on.
+- If a period has no activity but lifetime/all-time figures are present, acknowledge the quiet stretch in a short phrase, then pivot to the bigger picture so the reply still lands. Example: "Looks like nothing's logged for June yet — but all-time you've brought in 7,440 and spent 3,119, so you're 4,320 ahead."
+- NEVER contradict yourself. Do not say "there are no records" and then quote records in the same breath. If you have numbers, lead with them confidently.
+- Never mention JSON, context, data limits, what was sent to you, or how the system works.
+
+STYLE:
 - Plain conversational text only — no markdown, no bullet points, no headers.
-- Keep answers under 150 words for simple questions, up to 200 words for multi-part analysis.`;
+- Keep it under 120 words for simple questions, up to 180 for multi-part ones. Brevity reads as confidence.`;
 
 // ── AI answer call ────────────────────────────────────────────────────────────
 
@@ -38,7 +52,7 @@ const callAI = async (question, context, history) => {
     {
       model:       "gpt-4o-mini",
       max_tokens:  350,
-      temperature: 0.3,
+      temperature: 0.5, // warmer, more human phrasing; figures come from context so accuracy holds
       messages: [
         { role: "system",    content: SYSTEM_PROMPT },
         { role: "user",      content: `Financial data:\n${JSON.stringify(context)}` },
@@ -171,7 +185,7 @@ export const chatService = {
     // ── Cache check (2 DB queries before full context build) ─────────────────
     const questionHash = crypto
       .createHash("sha256")
-      .update(normaliseQuestion(trimmed))
+      .update(`${PROMPT_VERSION}:${normaliseQuestion(trimmed)}`)
       .digest("hex")
       .slice(0, 32);
 

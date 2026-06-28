@@ -87,6 +87,7 @@ RULES:
 - Specific year (2024, 2025) → specific_year
 - "between X and Y" / "from X to Y" → date_range
 - Comparisons ("this month vs last month", "compare X and Y") → comparison type with both periods
+- Combined two-period phrasing ("this and last month", "this month and last month", "the last couple of months") → comparison type with period1:{type:"this_month"} and period2:{type:"last_month"}, include comparison in metricsNeeded so BOTH months are returned — never collapse this into a single month
 - "balance" / "how much do I have" / "available money" → intent:balance, include availableBalance and netBalance
 - "highest/most expensive category" → intent:highest_category, include categoryBreakdown and highestCategory
 - "lowest/cheapest category" → intent:lowest_category, include categoryBreakdown and lowestCategory
