@@ -691,4 +691,13 @@ const publicProfile = (user) => ({
   followersCount: user.followersCount,
   followingCount: user.followingCount,
   postsCount:     user.postsCount,
+  // Profile/contact fields — the user's own data, needed so the Profile screen
+  // is populated immediately on login instead of waiting for a separate fetch.
+  phoneNumber:    user.phoneNumber,
+  countryCode:    user.countryCode,
+  profession:     user.profession,
+  country:        user.country,
+  address:        user.address,
+  dateOfBirth:    user.dateOfBirth,
+  currency:       user.currency,
 });
